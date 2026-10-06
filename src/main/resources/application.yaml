@@ -1,0 +1,22 @@
+server:
+  port: 8081
+
+spring:
+  application:
+    name: jobtracker
+  docker:
+    compose:
+      enabled: false          # we start Docker ourselves
+  datasource:
+    url: jdbc:postgresql://127.0.0.1:55432/jobtracker
+    username: jobtracker
+    password: jobtracker123
+  jpa:
+    hibernate:
+      ddl-auto: validate
+    open-in-view: false
+  batch:
+    jdbc:
+      initialize-schema: always
+    job:
+      enabled: false
