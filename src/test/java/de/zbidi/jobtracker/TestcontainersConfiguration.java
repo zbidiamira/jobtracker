@@ -11,7 +11,7 @@ import org.testcontainers.utility.DockerImageName;
  * when the first producer/consumer is written.
  */
 @TestConfiguration(proxyBeanMethods = false)
-class TestcontainersConfiguration {
+public class TestcontainersConfiguration {
 
 	@Bean
 	@ServiceConnection

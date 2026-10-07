@@ -5,6 +5,7 @@ import java.util.List;
 import de.zbidi.jobtracker.jobapplication.DuplicateApplicationException;
 import de.zbidi.jobtracker.jobapplication.InvalidStatusTransitionException;
 import de.zbidi.jobtracker.jobapplication.RecruiterConflictException;
+import de.zbidi.jobtracker.jobapplication.StaleVersionException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
@@ -57,6 +58,7 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = conflict("Invalid status transition", ex.getMessage());
 		problem.setProperty("currentStatus", ex.getCurrentStatus());
 		problem.setProperty("requestedStatus", ex.getRequestedStatus());
+		problem.setProperty("allowedStatuses", ex.getAllowedStatuses());
 		return problem;
 	}
 
@@ -70,6 +72,16 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return conflict("Recruiter conflict", ex.getMessage());
 	}
 
+	/** The client's version is outdated (detected before writing). */
+	@ExceptionHandler(StaleVersionException.class)
+	ProblemDetail handleStaleVersion(StaleVersionException ex) {
+		ProblemDetail problem = conflict("Concurrent modification", ex.getMessage());
+		problem.setProperty("expectedVersion", ex.getExpectedVersion());
+		problem.setProperty("currentVersion", ex.getCurrentVersion());
+		return problem;
+	}
+
+	/** Two requests raced inside the database (detected by {@code @Version} on flush). */
 	@ExceptionHandler(ObjectOptimisticLockingFailureException.class)
 	ProblemDetail handleOptimisticLock(ObjectOptimisticLockingFailureException ex) {
 		return conflict("Concurrent modification",

@@ -1,43 +1,60 @@
 package de.zbidi.jobtracker.jobapplication;
 
+import java.util.Arrays;
+import java.util.EnumSet;
+import java.util.Map;
+import java.util.Set;
+import java.util.stream.Stream;
+
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
-import org.junit.jupiter.params.provider.CsvSource;
+import org.junit.jupiter.params.provider.Arguments;
 import org.junit.jupiter.params.provider.EnumSource;
+import org.junit.jupiter.params.provider.MethodSource;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
 class StatusTest {
 
-	@ParameterizedTest
-	@CsvSource({
-			"SAVED,     APPLIED",
-			"SAVED,     WITHDRAWN",
-			"APPLIED,   INTERVIEW",
-			"APPLIED,   REJECTED",
-			"APPLIED,   WITHDRAWN",
-			"INTERVIEW, OFFER",
-			"INTERVIEW, REJECTED",
-			"INTERVIEW, WITHDRAWN",
-			"OFFER,     ACCEPTED",
-			"OFFER,     REJECTED",
-			"OFFER,     WITHDRAWN"
-	})
-	void allowsValidTransitions(Status from, Status to) {
-		assertThat(from.canMoveTo(to)).isTrue();
+	/**
+	 * The workflow written out independently of the production switch: if the two ever disagree, a test fails.
+	 */
+	private static final Map<Status, Set<Status>> ALLOWED = Map.of(
+			Status.SAVED, EnumSet.of(Status.APPLIED, Status.WITHDRAWN),
+			Status.APPLIED, EnumSet.of(Status.INTERVIEW, Status.REJECTED, Status.WITHDRAWN),
+			Status.INTERVIEW, EnumSet.of(Status.OFFER, Status.REJECTED, Status.WITHDRAWN),
+			Status.OFFER, EnumSet.of(Status.ACCEPTED, Status.REJECTED, Status.WITHDRAWN),
+			Status.ACCEPTED, EnumSet.noneOf(Status.class),
+			Status.REJECTED, EnumSet.noneOf(Status.class),
+			Status.WITHDRAWN, EnumSet.noneOf(Status.class));
+
+	/** Every from/to pair: 7 x 7 = 49 cases, 11 allowed and 38 forbidden. */
+	static Stream<Arguments> allTransitions() {
+		return Arrays.stream(Status.values()).flatMap(from -> Arrays.stream(Status.values())
+				.map(to -> Arguments.of(from, to, ALLOWED.get(from).contains(to))));
+	}
+
+	@ParameterizedTest(name = "{0} -> {1}: allowed={2}")
+	@MethodSource("allTransitions")
+	void transitionMatrix(Status from, Status to, boolean allowed) {
+		assertThat(from.canMoveTo(to)).isEqualTo(allowed);
+	}
+
+	@Test
+	void expectedTableHasElevenAllowedTransitions() {
+		assertThat(allTransitions().filter(args -> (boolean) args.get()[2])).hasSize(11);
 	}
 
 	@ParameterizedTest
-	@CsvSource({
-			"SAVED,     INTERVIEW",
-			"SAVED,     OFFER",
-			"APPLIED,   SAVED",
-			"APPLIED,   OFFER",
-			"INTERVIEW, APPLIED",
-			"OFFER,     INTERVIEW"
-	})
-	void rejectsSkippingOrGoingBack(Status from, Status to) {
-		assertThat(from.canMoveTo(to)).isFalse();
+	@EnumSource(Status.class)
+	void nextStatusesMatchTheWorkflow(Status from) {
+		assertThat(from.nextStatuses()).isEqualTo(ALLOWED.get(from));
+	}
+
+	@Test
+	void nextStatusesAreInPipelineOrder() {
+		assertThat(Status.APPLIED.nextStatuses()).containsExactly(Status.INTERVIEW, Status.REJECTED, Status.WITHDRAWN);
+		assertThat(Status.REJECTED.nextStatuses()).isEmpty();
 	}
 
 	@ParameterizedTest

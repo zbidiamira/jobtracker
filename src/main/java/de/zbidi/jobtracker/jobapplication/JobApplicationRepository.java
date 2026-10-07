@@ -5,18 +5,18 @@ import java.util.List;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
+import org.springframework.data.jpa.domain.Specification;
 import org.springframework.data.jpa.repository.EntityGraph;
 import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.data.jpa.repository.JpaSpecificationExecutor;
 
-public interface JobApplicationRepository extends JpaRepository<JobApplication, Long> {
+public interface JobApplicationRepository extends JpaRepository<JobApplication, Long>,
+		JpaSpecificationExecutor<JobApplication> {
 
-	// paged lists fetch the company in the same query (avoids one extra query per row)
+	// search results fetch the company in the same query (avoids one extra query per row)
 	@Override
 	@EntityGraph(attributePaths = "company")
-	Page<JobApplication> findAll(Pageable pageable);
-
-	@EntityGraph(attributePaths = "company")
-	Page<JobApplication> findByStatus(Status status, Pageable pageable);
+	Page<JobApplication> findAll(Specification<JobApplication> spec, Pageable pageable);
 
 	List<JobApplication> findByStatus(Status status);
 

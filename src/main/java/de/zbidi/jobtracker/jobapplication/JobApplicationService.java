@@ -1,5 +1,9 @@
 package de.zbidi.jobtracker.jobapplication;
 
+import java.time.Clock;
+import java.util.List;
+import java.util.Objects;
+
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
 import de.zbidi.jobtracker.company.Company;
@@ -27,13 +31,19 @@ public class JobApplicationService {
 	private final JobApplicationRepository jobApplicationRepository;
 	private final CompanyRepository companyRepository;
 	private final RecruiterRepository recruiterRepository;
+	private final StatusHistoryRepository statusHistoryRepository;
+	private final Clock clock;
 
 	public JobApplicationService(JobApplicationRepository jobApplicationRepository,
 			CompanyRepository companyRepository,
-			RecruiterRepository recruiterRepository) {
+			RecruiterRepository recruiterRepository,
+			StatusHistoryRepository statusHistoryRepository,
+			Clock clock) {
 		this.jobApplicationRepository = jobApplicationRepository;
 		this.companyRepository = companyRepository;
 		this.recruiterRepository = recruiterRepository;
+		this.statusHistoryRepository = statusHistoryRepository;
+		this.clock = clock;
 	}
 
 	public JobApplicationResponse create(NewJobApplication request) {
@@ -63,18 +73,24 @@ public class JobApplicationService {
 	}
 
 	/**
-	 * @param status optional filter, {@code null} returns all applications
+	 * Filters are optional and combined with AND; dates are interpreted in the clock's (business) time zone.
 	 */
 	@Transactional(readOnly = true)
-	public PageResponse<JobApplicationResponse> list(Status status, Pageable pageable) {
-		Page<JobApplication> page = status == null
-				? jobApplicationRepository.findAll(pageable)
-				: jobApplicationRepository.findByStatus(status, pageable);
+	public PageResponse<JobApplicationResponse> search(JobApplicationSearch search, Pageable pageable) {
+		Page<JobApplication> page = jobApplicationRepository.findAll(
+				ApplicationSpecifications.matching(search, clock.getZone()), pageable);
 		return PageResponse.from(page.map(JobApplicationResponse::from));
 	}
 
-	public JobApplicationResponse changeStatus(Long id, Status newStatus) {
+	/**
+	 * @param expectedVersion the version the client based its change on
+	 * @throws StaleVersionException if someone else changed the application in the meantime
+	 */
+	public JobApplicationResponse changeStatus(Long id, Status newStatus, Long expectedVersion) {
 		JobApplication application = find(id);
+		if (!Objects.equals(application.getVersion(), expectedVersion)) {
+			throw new StaleVersionException(id, expectedVersion, application.getVersion());
+		}
 
 		Recruiter recruiter = application.getRecruiter();
 		boolean becomesActive = newStatus != null && newStatus.isActive() && !application.getStatus().isActive();
@@ -84,9 +100,23 @@ public class JobApplicationService {
 					"%s already has your CV for another active application".formatted(recruiter.getName()));
 		}
 
+		Status oldStatus = application.getStatus();
 		application.changeStatus(newStatus);
 		// flush so the response carries the incremented version and updated_at
-		return JobApplicationResponse.from(jobApplicationRepository.saveAndFlush(application));
+		JobApplication saved = jobApplicationRepository.saveAndFlush(application);
+		// same transaction: if writing the history fails, the status update above is rolled back too
+		statusHistoryRepository.save(new StatusHistory(saved, oldStatus, newStatus));
+		return JobApplicationResponse.from(saved);
+	}
+
+	@Transactional(readOnly = true)
+	public List<StatusHistoryResponse> history(Long id) {
+		if (!jobApplicationRepository.existsById(id)) {
+			throw new ResourceNotFoundException("Job application", id);
+		}
+		return statusHistoryRepository.findByJobApplicationIdOrderByChangedAtAscIdAsc(id).stream()
+				.map(StatusHistoryResponse::from)
+				.toList();
 	}
 
 	private JobApplication find(Long id) {

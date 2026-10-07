@@ -1,5 +1,7 @@
 package de.zbidi.jobtracker.jobapplication;
 
+import java.util.Collections;
+import java.util.EnumSet;
 import java.util.Set;
 
 /**
@@ -24,21 +26,23 @@ public enum Status {
 	}
 
 	public boolean canMoveTo(Status target) {
-		return target != null && allowedTargets().contains(target);
+		return target != null && nextStatuses().contains(target);
 	}
 
 	public boolean isFinal() {
-		return allowedTargets().isEmpty();
+		return nextStatuses().isEmpty();
 	}
 
-	private Set<Status> allowedTargets() {
-		return switch (this) {
-			case SAVED -> Set.of(APPLIED, WITHDRAWN);
-			case APPLIED -> Set.of(INTERVIEW, REJECTED, WITHDRAWN);
-			case INTERVIEW -> Set.of(OFFER, REJECTED, WITHDRAWN);
-			case OFFER -> Set.of(ACCEPTED, REJECTED, WITHDRAWN);
-			case ACCEPTED, REJECTED, WITHDRAWN -> Set.of();
+	/** The statuses this one may move to, in pipeline order; empty for final statuses. */
+	public Set<Status> nextStatuses() {
+		EnumSet<Status> next = switch (this) {
+			case SAVED -> EnumSet.of(APPLIED, WITHDRAWN);
+			case APPLIED -> EnumSet.of(INTERVIEW, REJECTED, WITHDRAWN);
+			case INTERVIEW -> EnumSet.of(OFFER, REJECTED, WITHDRAWN);
+			case OFFER -> EnumSet.of(ACCEPTED, REJECTED, WITHDRAWN);
+			case ACCEPTED, REJECTED, WITHDRAWN -> EnumSet.noneOf(Status.class);
 		};
+		return Collections.unmodifiableSet(next);
 	}
 
 }

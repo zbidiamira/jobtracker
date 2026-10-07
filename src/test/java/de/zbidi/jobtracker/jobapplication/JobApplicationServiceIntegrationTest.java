@@ -4,6 +4,7 @@ import de.zbidi.jobtracker.PostgresTestcontainersConfiguration;
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
 import de.zbidi.jobtracker.company.Company;
+import de.zbidi.jobtracker.config.ClockConfig;
 import de.zbidi.jobtracker.config.JpaAuditingConfig;
 import de.zbidi.jobtracker.recruiter.Recruiter;
 import org.junit.jupiter.api.BeforeEach;
@@ -21,7 +22,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 @DataJpaTest
 @AutoConfigureTestDatabase(replace = AutoConfigureTestDatabase.Replace.NONE)
-@Import({PostgresTestcontainersConfiguration.class, JpaAuditingConfig.class, JobApplicationService.class})
+@Import({PostgresTestcontainersConfiguration.class, JpaAuditingConfig.class, ClockConfig.class, JobApplicationService.class})
 class JobApplicationServiceIntegrationTest {
 
 	@Autowired
@@ -94,7 +95,7 @@ class JobApplicationServiceIntegrationTest {
 			service.create(new NewJobApplication(acme.getId(), null, position, null));
 		}
 
-		PageResponse<JobApplicationResponse> page = service.list(null, PageRequest.of(0, 2, Sort.by("position")));
+		PageResponse<JobApplicationResponse> page = service.search(new JobApplicationSearch(null, null, null, null, null), PageRequest.of(0, 2, Sort.by("position")));
 
 		assertThat(page.content()).extracting(JobApplicationResponse::position).containsExactly("A Dev", "B Dev");
 		assertThat(page.totalElements()).isEqualTo(3);
@@ -104,10 +105,10 @@ class JobApplicationServiceIntegrationTest {
 	@Test
 	void listWithStatusFiltersAndPages() {
 		Long applied = service.create(new NewJobApplication(acme.getId(), null, "A Dev", null)).id();
-		service.changeStatus(applied, Status.APPLIED);
+		change(applied, Status.APPLIED);
 		service.create(new NewJobApplication(acme.getId(), null, "B Dev", null));
 
-		PageResponse<JobApplicationResponse> page = service.list(Status.APPLIED, PageRequest.of(0, 10));
+		PageResponse<JobApplicationResponse> page = service.search(new JobApplicationSearch(Status.APPLIED, null, null, null, null), PageRequest.of(0, 10));
 
 		assertThat(page.content()).extracting(JobApplicationResponse::position).containsExactly("A Dev");
 		assertThat(page.totalElements()).isEqualTo(1);
@@ -119,7 +120,7 @@ class JobApplicationServiceIntegrationTest {
 	void changeStatusReturnsUpdatedResponseWithNewVersion() {
 		Long id = service.create(new NewJobApplication(acme.getId(), null, "Java Developer", null)).id();
 
-		JobApplicationResponse changed = service.changeStatus(id, Status.APPLIED);
+		JobApplicationResponse changed = change(id, Status.APPLIED);
 
 		assertThat(changed.status()).isEqualTo(Status.APPLIED);
 		assertThat(changed.version()).isEqualTo(1L);
@@ -128,7 +129,7 @@ class JobApplicationServiceIntegrationTest {
 	@Test
 	void changeStatusOnUnknownIdThrowsNotFound() {
 		assertThatExceptionOfType(ResourceNotFoundException.class)
-				.isThrownBy(() -> service.changeStatus(999_999L, Status.APPLIED));
+				.isThrownBy(() -> change(999_999L, Status.APPLIED));
 	}
 
 	@Test
@@ -136,7 +137,7 @@ class JobApplicationServiceIntegrationTest {
 		Long id = service.create(new NewJobApplication(acme.getId(), null, "Java Developer", null)).id();
 
 		assertThatExceptionOfType(InvalidStatusTransitionException.class)
-				.isThrownBy(() -> service.changeStatus(id, Status.OFFER));
+				.isThrownBy(() -> change(id, Status.OFFER));
 	}
 
 	// --- same job twice ---
@@ -176,12 +177,12 @@ class JobApplicationServiceIntegrationTest {
 	@Test
 	void blocksApplyingToSecondJobOfSameRecruiterWhileFirstIsActive() {
 		Long first = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Java Developer", null)).id();
-		service.changeStatus(first, Status.APPLIED);
+		change(first, Status.APPLIED);
 		// saving a second job of the same recruiter is fine, only applying is not
 		Long second = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Kotlin Developer", null)).id();
 
 		assertThatExceptionOfType(RecruiterConflictException.class)
-				.isThrownBy(() -> service.changeStatus(second, Status.APPLIED))
+				.isThrownBy(() -> change(second, Status.APPLIED))
 				.withMessageContaining("Anna Schmidt");
 		assertThat(service.get(second).status()).isEqualTo(Status.SAVED);
 	}
@@ -189,33 +190,33 @@ class JobApplicationServiceIntegrationTest {
 	@Test
 	void stillBlockedWhileFirstIsInInterviewOrOffer() {
 		Long first = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Java Developer", null)).id();
-		service.changeStatus(first, Status.APPLIED);
-		service.changeStatus(first, Status.INTERVIEW);
-		service.changeStatus(first, Status.OFFER);
+		change(first, Status.APPLIED);
+		change(first, Status.INTERVIEW);
+		change(first, Status.OFFER);
 		Long second = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Kotlin Developer", null)).id();
 
 		assertThatExceptionOfType(RecruiterConflictException.class)
-				.isThrownBy(() -> service.changeStatus(second, Status.APPLIED));
+				.isThrownBy(() -> change(second, Status.APPLIED));
 	}
 
 	@Test
 	void allowsApplyingAgainOnceFirstIsRejected() {
 		Long first = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Java Developer", null)).id();
-		service.changeStatus(first, Status.APPLIED);
-		service.changeStatus(first, Status.REJECTED);
+		change(first, Status.APPLIED);
+		change(first, Status.REJECTED);
 		Long second = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Kotlin Developer", null)).id();
 
-		assertThat(service.changeStatus(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
+		assertThat(change(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
 	}
 
 	@Test
 	void differentRecruitersDoNotBlockEachOther() {
 		Recruiter ben = em.persist(new Recruiter("Ben Meyer", "ben@acme.example", acme));
 		Long first = service.create(new NewJobApplication(acme.getId(), anna.getId(), "Java Developer", null)).id();
-		service.changeStatus(first, Status.APPLIED);
+		change(first, Status.APPLIED);
 		Long second = service.create(new NewJobApplication(acme.getId(), ben.getId(), "Kotlin Developer", null)).id();
 
-		assertThat(service.changeStatus(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
+		assertThat(change(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
 	}
 
 	@Test
@@ -223,9 +224,14 @@ class JobApplicationServiceIntegrationTest {
 		Long first = service.create(new NewJobApplication(acme.getId(), null, "Java Developer", null)).id();
 		Long second = service.create(new NewJobApplication(acme.getId(), null, "Kotlin Developer", null)).id();
 
-		service.changeStatus(first, Status.APPLIED);
+		change(first, Status.APPLIED);
 
-		assertThat(service.changeStatus(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
+		assertThat(change(second, Status.APPLIED).status()).isEqualTo(Status.APPLIED);
+	}
+
+	/** Like a real client: send the version it last read. */
+	private JobApplicationResponse change(Long id, Status status) {
+		return service.changeStatus(id, status, service.get(id).version());
 	}
 
 }

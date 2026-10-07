@@ -1,6 +1,7 @@
 package de.zbidi.jobtracker.jobapplication;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
@@ -8,10 +9,13 @@ import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
 import de.zbidi.jobtracker.config.SecurityConfig;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
 import org.springframework.context.annotation.Import;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.data.domain.Pageable;
+import org.springframework.data.domain.Sort;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
@@ -22,7 +26,6 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -142,34 +145,95 @@ class JobApplicationControllerTest {
 		assertThat(result).hasStatus(HttpStatus.NOT_FOUND).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 	}
 
-	// --- GET /api/applications ---
+	// --- GET /api/applications/{id}/history ---
 
 	@Test
-	void listWithoutStatusCallsServiceWithEmptyFilter() {
-		given(service.list(isNull(), any())).willReturn(new PageResponse<>(List.of(response(Status.SAVED)), 0, 20, 1, 1));
+	void historyReturnsStatusChangesOldestFirst() {
+		given(service.history(5L)).willReturn(List.of(
+				new StatusHistoryResponse(Status.SAVED, Status.APPLIED, NOW),
+				new StatusHistoryResponse(Status.APPLIED, Status.INTERVIEW, NOW.plusSeconds(60))));
+
+		MvcTestResult result = mvc.get().uri("/api/applications/5/history").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.OK);
+		assertThat(result).bodyJson().extractingPath("$[0].fromStatus").isEqualTo("SAVED");
+		assertThat(result).bodyJson().extractingPath("$[1].toStatus").isEqualTo("INTERVIEW");
+		assertThat(result).bodyJson().extractingPath("$[1].changedAt").isEqualTo("2026-10-06T10:01:00Z");
+	}
+
+	@Test
+	void historyOfUnknownApplicationReturns404() {
+		given(service.history(99L)).willThrow(new ResourceNotFoundException("Job application", 99L));
+
+		assertThat(mvc.get().uri("/api/applications/99/history").exchange()).hasStatus(HttpStatus.NOT_FOUND);
+	}
+
+	// --- GET /api/applications ---
+
+	private static final JobApplicationSearch NO_FILTER = new JobApplicationSearch(null, null, null, null, null);
+
+	@Test
+	void listWithoutFiltersSearchesWithEmptyCriteria() {
+		given(service.search(eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(response(Status.SAVED)), 0, 20, 1, 1));
 
 		MvcTestResult result = mvc.get().uri("/api/applications").exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$.content[0].id").isEqualTo(5);
-		verify(service).list(isNull(), any());
+		verify(service).search(eq(NO_FILTER), any());
 	}
 
 	@Test
-	void listWithStatusFilterPassesStatus() {
-		given(service.list(eq(Status.APPLIED), any())).willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
+	void plainListIgnoresFilterParameters() {
+		given(service.search(eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
 
-		MvcTestResult result = mvc.get().uri("/api/applications?status=APPLIED&page=0&size=20").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications?status=APPLIED&companyName=acme").exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
-		verify(service).list(eq(Status.APPLIED), any());
+		verify(service).search(eq(NO_FILTER), any());
+	}
+
+	@Test
+	void searchBindsAllQueryParameters() {
+		given(service.search(any(), any())).willReturn(new PageResponse<>(List.of(), 1, 5, 0, 0));
+
+		MvcTestResult result = mvc.get().uri("/api/applications/search?status=APPLIED&companyName=acme&position=java"
+				+ "&createdFrom=2026-10-01&createdTo=2026-10-07&page=1&size=5&sort=position").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.OK);
+		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
+		verify(service).search(eq(new JobApplicationSearch(Status.APPLIED, "acme", "java",
+				LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 7))), pageable.capture());
+		assertThat(pageable.getValue().getPageNumber()).isEqualTo(1);
+		assertThat(pageable.getValue().getPageSize()).isEqualTo(5);
+		assertThat(pageable.getValue().getSort()).isEqualTo(Sort.by("position"));
 	}
 
 	@Test
 	void listWithUnknownStatusReturns400() {
-		MvcTestResult result = mvc.get().uri("/api/applications?status=SENT").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/search?status=SENT").exchange();
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("status");
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void searchWithInvalidDateReturns400() {
+		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=07.10.2026").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("createdFrom");
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void searchWithFromAfterToReturns400() {
+		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=2026-10-07&createdTo=2026-10-01").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+		assertThat(result).bodyJson().extractingPath("$.errors[0].message")
+				.isEqualTo("createdFrom must not be after createdTo");
 		verifyNoInteractions(service);
 	}
 
@@ -177,10 +241,10 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchStatusReturns200WithNewStatus() {
-		given(service.changeStatus(5L, Status.APPLIED)).willReturn(response(Status.APPLIED));
+		given(service.changeStatus(5L, Status.APPLIED, 0L)).willReturn(response(Status.APPLIED));
 
 		MvcTestResult result = patch(5L, """
-				{"status": "APPLIED"}
+				{"status": "APPLIED", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.OK);
@@ -189,7 +253,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchWithMissingStatusReturns400() {
-		MvcTestResult result = patch(5L, "{}");
+		MvcTestResult result = patch(5L, "{\"version\": 0}");
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
 		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("status");
@@ -199,7 +263,7 @@ class JobApplicationControllerTest {
 	@Test
 	void patchWithUnknownStatusValueReturns400() {
 		MvcTestResult result = patch(5L, """
-				{"status": "SENT"}
+				{"status": "SENT", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
@@ -208,44 +272,73 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchInvalidTransitionReturns409WithCurrentAndRequestedStatus() {
-		given(service.changeStatus(5L, Status.OFFER))
+		given(service.changeStatus(5L, Status.OFFER, 0L))
 				.willThrow(new InvalidStatusTransitionException(Status.SAVED, Status.OFFER));
 
 		MvcTestResult result = patch(5L, """
-				{"status": "OFFER"}
+				{"status": "OFFER", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
-		assertThat(result).bodyJson().extractingPath("$.detail").isEqualTo("Cannot change status from SAVED to OFFER");
+		assertThat(result).bodyJson().extractingPath("$.detail")
+				.isEqualTo("Cannot change status from SAVED to OFFER. Allowed next statuses: APPLIED, WITHDRAWN.");
 		assertThat(result).bodyJson().extractingPath("$.currentStatus").isEqualTo("SAVED");
 		assertThat(result).bodyJson().extractingPath("$.requestedStatus").isEqualTo("OFFER");
+		assertThat(result).bodyJson().extractingPath("$.allowedStatuses").asArray().containsExactly("APPLIED", "WITHDRAWN");
 	}
 
 	@Test
 	void patchFromRejectedToInterviewReturns409Problem() {
-		given(service.changeStatus(5L, Status.INTERVIEW))
+		given(service.changeStatus(5L, Status.INTERVIEW, 0L))
 				.willThrow(new InvalidStatusTransitionException(Status.REJECTED, Status.INTERVIEW));
 
 		MvcTestResult result = patch(5L, """
-				{"status": "INTERVIEW"}
+				{"status": "INTERVIEW", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo(409);
 		assertThat(result).bodyJson().extractingPath("$.title").isEqualTo("Invalid status transition");
-		assertThat(result).bodyJson().extractingPath("$.detail").isEqualTo("Cannot change status from REJECTED to INTERVIEW");
+		assertThat(result).bodyJson().extractingPath("$.detail")
+				.isEqualTo("Cannot change status from REJECTED to INTERVIEW: REJECTED is a final status.");
 		assertThat(result).bodyJson().extractingPath("$.instance").isEqualTo("/api/applications/5/status");
 		assertThat(result).bodyJson().extractingPath("$.currentStatus").isEqualTo("REJECTED");
 		assertThat(result).bodyJson().extractingPath("$.requestedStatus").isEqualTo("INTERVIEW");
+		assertThat(result).bodyJson().extractingPath("$.allowedStatuses").asArray().isEmpty();
+	}
+
+	@Test
+	void patchWithoutVersionReturns400() {
+		MvcTestResult result = patch(5L, """
+				{"status": "APPLIED"}
+				""");
+
+		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
+		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("version");
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	void patchWithStaleVersionReturns409WithBothVersions() {
+		given(service.changeStatus(5L, Status.INTERVIEW, 1L)).willThrow(new StaleVersionException(5L, 1L, 2L));
+
+		MvcTestResult result = patch(5L, """
+				{"status": "INTERVIEW", "version": 1}
+				""");
+
+		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.title").isEqualTo("Concurrent modification");
+		assertThat(result).bodyJson().extractingPath("$.expectedVersion").isEqualTo(1);
+		assertThat(result).bodyJson().extractingPath("$.currentVersion").isEqualTo(2);
 	}
 
 	@Test
 	void patchRecruiterConflictReturns409() {
-		given(service.changeStatus(5L, Status.APPLIED))
+		given(service.changeStatus(5L, Status.APPLIED, 0L))
 				.willThrow(new RecruiterConflictException("Anna Schmidt already has your CV for another active application"));
 
 		MvcTestResult result = patch(5L, """
-				{"status": "APPLIED"}
+				{"status": "APPLIED", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.CONFLICT);
@@ -254,10 +347,10 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchUnknownIdReturns404() {
-		given(service.changeStatus(99L, Status.APPLIED)).willThrow(new ResourceNotFoundException("Job application", 99L));
+		given(service.changeStatus(99L, Status.APPLIED, 0L)).willThrow(new ResourceNotFoundException("Job application", 99L));
 
 		MvcTestResult result = patch(99L, """
-				{"status": "APPLIED"}
+				{"status": "APPLIED", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.NOT_FOUND);
@@ -265,11 +358,11 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchOptimisticLockFailureReturns409() {
-		given(service.changeStatus(5L, Status.APPLIED))
+		given(service.changeStatus(5L, Status.APPLIED, 0L))
 				.willThrow(new ObjectOptimisticLockingFailureException(JobApplication.class, 5L));
 
 		MvcTestResult result = patch(5L, """
-				{"status": "APPLIED"}
+				{"status": "APPLIED", "version": 0}
 				""");
 
 		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
