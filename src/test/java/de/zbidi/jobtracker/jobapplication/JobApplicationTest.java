@@ -4,7 +4,7 @@ import de.zbidi.jobtracker.company.Company;
 import org.junit.jupiter.api.Test;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatIllegalStateException;
+import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 
 class JobApplicationTest {
 
@@ -31,10 +31,14 @@ class JobApplicationTest {
 	void changeStatusRejectsForbiddenTransition() {
 		JobApplication application = new JobApplication(company, "Java Developer", null);
 
-		assertThatIllegalStateException()
+		assertThatExceptionOfType(InvalidStatusTransitionException.class)
 				.isThrownBy(() -> application.changeStatus(Status.OFFER))
 				.withMessageContaining("SAVED")
-				.withMessageContaining("OFFER");
+				.withMessageContaining("OFFER")
+				.satisfies(e -> {
+					assertThat(e.getCurrentStatus()).isEqualTo(Status.SAVED);
+					assertThat(e.getRequestedStatus()).isEqualTo(Status.OFFER);
+				});
 		assertThat(application.getStatus()).isEqualTo(Status.SAVED);
 	}
 

@@ -79,12 +79,11 @@ public class JobApplication {
 	/**
 	 * Moves the application to a new status, enforcing {@link Status#canMoveTo(Status)}.
 	 *
-	 * @throws IllegalStateException if the transition is not allowed
+	 * @throws InvalidStatusTransitionException if the transition is not allowed
 	 */
 	public void changeStatus(Status newStatus) {
 		if (!status.canMoveTo(newStatus)) {
-			throw new IllegalStateException(
-					"Cannot change status from %s to %s".formatted(status, newStatus));
+			throw new InvalidStatusTransitionException(status, newStatus);
 		}
 		this.status = newStatus;
 	}

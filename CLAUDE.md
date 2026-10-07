@@ -20,7 +20,7 @@ docker compose up -d
 # Run a single test class
 ./mvnw test -Dtest=JobtrackerApplicationTests
 
-# Run with Testcontainers dev mode (auto-provisions Kafka + Postgres)
+# Run with Testcontainers dev mode (auto-provisions Postgres; no Kafka container until Kafka is used)
 ./mvnw spring-boot:test-run
 ```
 
@@ -40,7 +40,7 @@ docker compose up -d
 Two main entities: `company` and `job_application` (with FK to company). See `V1__init.sql` for schema.
 
 ### Testing
-- Testcontainers for integration tests (PostgreSQL + Kafka)
+- Testcontainers for integration tests (PostgreSQL; Kafka container to be added once Kafka is used)
 - `TestJobtrackerApplication` runs the app with Testcontainers for local development
 - Test config in `TestcontainersConfiguration.java`
 

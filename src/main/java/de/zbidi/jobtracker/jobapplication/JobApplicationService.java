@@ -1,9 +1,13 @@
 package de.zbidi.jobtracker.jobapplication;
 
+import de.zbidi.jobtracker.common.PageResponse;
+import de.zbidi.jobtracker.common.ResourceNotFoundException;
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.company.CompanyRepository;
 import de.zbidi.jobtracker.recruiter.Recruiter;
 import de.zbidi.jobtracker.recruiter.RecruiterRepository;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -14,6 +18,7 @@ import org.springframework.transaction.annotation.Transactional;
  *     <li>only one active application per recruiter, so a recruiter never sees the CV for two jobs at once</li>
  * </ul>
  * The V2 unique indexes enforce the same rules in the database as a safety net.
+ * Results are mapped to {@link JobApplicationResponse} inside the transaction (open-in-view is off).
  */
 @Service
 @Transactional
@@ -31,12 +36,12 @@ public class JobApplicationService {
 		this.recruiterRepository = recruiterRepository;
 	}
 
-	public JobApplication create(NewJobApplication request) {
+	public JobApplicationResponse create(NewJobApplication request) {
 		Company company = companyRepository.findById(request.companyId())
-				.orElseThrow(() -> new IllegalArgumentException("Company " + request.companyId() + " not found"));
+				.orElseThrow(() -> new ResourceNotFoundException("Company", request.companyId()));
 		Recruiter recruiter = request.recruiterId() == null ? null
 				: recruiterRepository.findById(request.recruiterId())
-						.orElseThrow(() -> new IllegalArgumentException("Recruiter " + request.recruiterId() + " not found"));
+						.orElseThrow(() -> new ResourceNotFoundException("Recruiter", request.recruiterId()));
 
 		if (request.jobUrl() != null && jobApplicationRepository.existsByJobUrl(request.jobUrl())) {
 			throw new DuplicateApplicationException(
@@ -47,13 +52,29 @@ public class JobApplicationService {
 					"You already have an application for '%s' at %s".formatted(request.position(), company.getName()));
 		}
 
-		return jobApplicationRepository.save(
+		JobApplication saved = jobApplicationRepository.save(
 				new JobApplication(company, recruiter, request.position(), request.jobUrl()));
+		return JobApplicationResponse.from(saved);
 	}
 
-	public JobApplication changeStatus(Long id, Status newStatus) {
-		JobApplication application = jobApplicationRepository.findById(id)
-				.orElseThrow(() -> new IllegalArgumentException("Job application " + id + " not found"));
+	@Transactional(readOnly = true)
+	public JobApplicationResponse get(Long id) {
+		return JobApplicationResponse.from(find(id));
+	}
+
+	/**
+	 * @param status optional filter, {@code null} returns all applications
+	 */
+	@Transactional(readOnly = true)
+	public PageResponse<JobApplicationResponse> list(Status status, Pageable pageable) {
+		Page<JobApplication> page = status == null
+				? jobApplicationRepository.findAll(pageable)
+				: jobApplicationRepository.findByStatus(status, pageable);
+		return PageResponse.from(page.map(JobApplicationResponse::from));
+	}
+
+	public JobApplicationResponse changeStatus(Long id, Status newStatus) {
+		JobApplication application = find(id);
 
 		Recruiter recruiter = application.getRecruiter();
 		boolean becomesActive = newStatus != null && newStatus.isActive() && !application.getStatus().isActive();
@@ -64,7 +85,13 @@ public class JobApplicationService {
 		}
 
 		application.changeStatus(newStatus);
-		return application;
+		// flush so the response carries the incremented version and updated_at
+		return JobApplicationResponse.from(jobApplicationRepository.saveAndFlush(application));
+	}
+
+	private JobApplication find(Long id) {
+		return jobApplicationRepository.findById(id)
+				.orElseThrow(() -> new ResourceNotFoundException("Job application", id));
 	}
 
 }
