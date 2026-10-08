@@ -12,11 +12,15 @@ import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.company.CompanyRepository;
 import de.zbidi.jobtracker.recruiter.Recruiter;
 import de.zbidi.jobtracker.recruiter.RecruiterRepository;
+import de.zbidi.jobtracker.user.AppUser;
+import de.zbidi.jobtracker.user.AppUserRepository;
+import de.zbidi.jobtracker.user.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.ArgumentMatchers;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.data.domain.PageImpl;
@@ -30,6 +34,7 @@ import static org.assertj.core.api.Assertions.assertThatExceptionOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -37,9 +42,12 @@ import static org.mockito.Mockito.verifyNoInteractions;
 /**
  * Fast unit test: repositories mocked, no Spring, no Docker.
  * {@link JobApplicationServiceIntegrationTest} covers the same rules against real Postgres.
+ * Every lookup is scoped to the caller ({@link #OWNER_ID}); someone else's application is "not found".
  */
 @ExtendWith(MockitoExtension.class)
 class JobApplicationServiceTest {
+
+	private static final long OWNER_ID = 42L;
 
 	@Mock
 	JobApplicationRepository jobApplicationRepository;
@@ -53,32 +61,104 @@ class JobApplicationServiceTest {
 	@Mock
 	StatusHistoryRepository statusHistoryRepository;
 
+	@Mock
+	AppUserRepository appUserRepository;
+
 	JobApplicationService service;
 
+	private final AppUser owner = withId(new AppUser("alice@example.com", "$2a$10$hash", Role.USER), OWNER_ID);
 	private final Company acme = withId(new Company("ACME GmbH", "Berlin", null), 1L);
 
 	@BeforeEach
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneId.of("Europe/Berlin"));
 		service = new JobApplicationService(jobApplicationRepository, companyRepository, recruiterRepository,
-				statusHistoryRepository, clock);
+				statusHistoryRepository, appUserRepository, clock);
 	}
 
-	// --- search ---
+	// --- ownership ---
 
 	@Test
-	void searchPassesSpecificationAndPageableToRepository() {
+	void getOtherUsersApplicationThrowsNotFound() {
+		// the application exists, but not for this owner: the repository query is scoped, so it returns nothing
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.empty());
+
+		assertThatExceptionOfType(ResourceNotFoundException.class)
+				.isThrownBy(() -> service.get(OWNER_ID, 5L))
+				.withMessage("Job application 5 not found");
+	}
+
+	@Test
+	void changeStatusOnOtherUsersApplicationThrowsNotFoundAndSavesNothing() {
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.empty());
+
+		assertThatExceptionOfType(ResourceNotFoundException.class)
+				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L));
+		verify(jobApplicationRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(statusHistoryRepository);
+	}
+
+	@Test
+	void historyOfOtherUsersApplicationThrowsNotFound() {
+		given(jobApplicationRepository.existsByIdAndOwnerId(5L, OWNER_ID)).willReturn(false);
+
+		assertThatExceptionOfType(ResourceNotFoundException.class)
+				.isThrownBy(() -> service.history(OWNER_ID, 5L))
+				.withMessage("Job application 5 not found");
+		verifyNoInteractions(statusHistoryRepository);
+	}
+
+	@Test
+	void createSetsOwnerAndChecksDuplicatesPerOwner() {
+		given(companyRepository.findById(1L)).willReturn(Optional.of(acme));
+		given(appUserRepository.getReferenceById(OWNER_ID)).willReturn(owner);
+		given(jobApplicationRepository.save(any(JobApplication.class)))
+				.willAnswer(invocation -> stored(invocation.getArgument(0)));
+
+		service.create(OWNER_ID, new NewJobApplication(1L, null, "Java Developer", "https://acme.example/jobs/1"));
+
+		ArgumentCaptor<JobApplication> saved = ArgumentCaptor.forClass(JobApplication.class);
+		verify(jobApplicationRepository).save(saved.capture());
+		assertThat(saved.getValue().getOwner()).isSameAs(owner);
+		verify(jobApplicationRepository).existsByOwnerIdAndJobUrl(OWNER_ID, "https://acme.example/jobs/1");
+		verify(jobApplicationRepository).existsByOwnerIdAndCompanyIdAndPositionIgnoreCase(OWNER_ID, 1L, "Java Developer");
+	}
+
+	@Test
+	void searchIsAlwaysScopedToTheOwner() {
 		Pageable pageable = PageRequest.of(1, 5);
 		given(jobApplicationRepository.findAll(ArgumentMatchers.<Specification<JobApplication>>any(), eq(pageable)))
 				.willReturn(new PageImpl<>(List.of(application()), pageable, 6));
 
-		PageResponse<JobApplicationResponse> page = service.search(
+		PageResponse<JobApplicationResponse> page = service.search(OWNER_ID,
 				new JobApplicationSearch(Status.SAVED, "acme", null, null, null), pageable);
 
 		assertThat(page.content()).extracting(JobApplicationResponse::position).containsExactly("Java Developer");
 		assertThat(page.page()).isEqualTo(1);
 		assertThat(page.totalElements()).isEqualTo(6);
-		verify(jobApplicationRepository).findAll(ArgumentMatchers.<Specification<JobApplication>>any(), eq(pageable));
+		// which rows the specification matches is covered against real SQL in ApplicationSpecificationsTest
+	}
+
+	// --- admin delete ---
+
+	@Test
+	void deleteRemovesHistoryThenApplication() {
+		JobApplication application = application(Status.APPLIED);
+		given(jobApplicationRepository.findById(5L)).willReturn(Optional.of(application));
+
+		service.delete(5L);
+
+		InOrder order = inOrder(statusHistoryRepository, jobApplicationRepository);
+		order.verify(statusHistoryRepository).deleteByJobApplicationId(5L);
+		order.verify(jobApplicationRepository).delete(application);
+	}
+
+	@Test
+	void deleteUnknownIdThrowsNotFound() {
+		given(jobApplicationRepository.findById(99L)).willReturn(Optional.empty());
+
+		assertThatExceptionOfType(ResourceNotFoundException.class).isThrownBy(() -> service.delete(99L));
+		verifyNoInteractions(statusHistoryRepository);
 	}
 
 	// --- PATCH status ---
@@ -86,10 +166,10 @@ class JobApplicationServiceTest {
 	@Test
 	void changeStatusFromRejectedToInterviewThrowsAndDoesNotSave() {
 		JobApplication rejected = application(Status.APPLIED, Status.REJECTED);
-		given(jobApplicationRepository.findById(5L)).willReturn(Optional.of(rejected));
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(rejected));
 
 		assertThatExceptionOfType(InvalidStatusTransitionException.class)
-				.isThrownBy(() -> service.changeStatus(5L, Status.INTERVIEW, 0L))
+				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.INTERVIEW, 0L))
 				.withMessage("Cannot change status from REJECTED to INTERVIEW: REJECTED is a final status.")
 				.satisfies(e -> {
 					assertThat(e.getCurrentStatus()).isEqualTo(Status.REJECTED);
@@ -103,10 +183,10 @@ class JobApplicationServiceTest {
 	@Test
 	void changeStatusSavesApplicationAndHistoryRow() {
 		JobApplication saved = application();
-		given(jobApplicationRepository.findById(5L)).willReturn(Optional.of(saved));
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(saved));
 		given(jobApplicationRepository.saveAndFlush(saved)).willReturn(saved);
 
-		JobApplicationResponse response = service.changeStatus(5L, Status.APPLIED, 0L);
+		JobApplicationResponse response = service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L);
 
 		assertThat(response.status()).isEqualTo(Status.APPLIED);
 		assertThat(response.companyName()).isEqualTo("ACME GmbH");
@@ -121,10 +201,10 @@ class JobApplicationServiceTest {
 	void changeStatusWithStaleVersionThrowsAndDoesNotSave() {
 		JobApplication current = application(Status.APPLIED);
 		ReflectionTestUtils.setField(current, "version", 2L);
-		given(jobApplicationRepository.findById(5L)).willReturn(Optional.of(current));
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(current));
 
 		assertThatExceptionOfType(StaleVersionException.class)
-				.isThrownBy(() -> service.changeStatus(5L, Status.INTERVIEW, 1L))
+				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.INTERVIEW, 1L))
 				.satisfies(e -> {
 					assertThat(e.getExpectedVersion()).isEqualTo(1L);
 					assertThat(e.getCurrentVersion()).isEqualTo(2L);
@@ -135,34 +215,15 @@ class JobApplicationServiceTest {
 	}
 
 	@Test
-	void historyForUnknownApplicationThrowsNotFound() {
-		given(jobApplicationRepository.existsById(99L)).willReturn(false);
-
-		assertThatExceptionOfType(ResourceNotFoundException.class)
-				.isThrownBy(() -> service.history(99L))
-				.withMessage("Job application 99 not found");
-		verifyNoInteractions(statusHistoryRepository);
-	}
-
-	@Test
-	void changeStatusOnUnknownIdThrowsNotFound() {
-		given(jobApplicationRepository.findById(99L)).willReturn(Optional.empty());
-
-		assertThatExceptionOfType(ResourceNotFoundException.class)
-				.isThrownBy(() -> service.changeStatus(99L, Status.APPLIED, 0L))
-				.withMessage("Job application 99 not found");
-	}
-
-	@Test
-	void changeStatusBlockedWhileRecruiterHasAnotherActiveApplication() {
+	void changeStatusBlockedWhileRecruiterHasAnotherActiveApplicationOfTheSameOwner() {
 		Recruiter anna = withId(new Recruiter("Anna Schmidt", "anna@acme.example", acme), 7L);
-		JobApplication application = stored(new JobApplication(acme, anna, "Kotlin Developer", null));
-		given(jobApplicationRepository.findById(5L)).willReturn(Optional.of(application));
-		given(jobApplicationRepository.existsByRecruiterIdAndStatusInAndIdNot(eq(7L), eq(Status.ACTIVE), eq(5L)))
-				.willReturn(true);
+		JobApplication application = stored(new JobApplication(owner, acme, anna, "Kotlin Developer", null));
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(application));
+		given(jobApplicationRepository.existsByOwnerIdAndRecruiterIdAndStatusInAndIdNot(
+				eq(OWNER_ID), eq(7L), eq(Status.ACTIVE), eq(5L))).willReturn(true);
 
 		assertThatExceptionOfType(RecruiterConflictException.class)
-				.isThrownBy(() -> service.changeStatus(5L, Status.APPLIED, 0L))
+				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L))
 				.withMessageContaining("Anna Schmidt");
 		verify(jobApplicationRepository, never()).saveAndFlush(any());
 	}
@@ -174,22 +235,14 @@ class JobApplicationServiceTest {
 		given(companyRepository.findById(99L)).willReturn(Optional.empty());
 
 		assertThatExceptionOfType(ResourceNotFoundException.class)
-				.isThrownBy(() -> service.create(new NewJobApplication(99L, null, "Java Developer", null)))
+				.isThrownBy(() -> service.create(OWNER_ID, new NewJobApplication(99L, null, "Java Developer", null)))
 				.withMessage("Company 99 not found");
 		verify(jobApplicationRepository, never()).save(any());
 	}
 
-	@Test
-	void getUnknownIdThrowsNotFound() {
-		given(jobApplicationRepository.findById(99L)).willReturn(Optional.empty());
-
-		assertThatExceptionOfType(ResourceNotFoundException.class)
-				.isThrownBy(() -> service.get(99L));
-	}
-
-	/** An application with id 5 that has gone through the given status changes. */
+	/** An application with id 5 owned by {@link #owner} that has gone through the given status changes. */
 	private JobApplication application(Status... path) {
-		JobApplication application = stored(new JobApplication(acme, "Java Developer", null));
+		JobApplication application = stored(new JobApplication(owner, acme, "Java Developer", null));
 		for (Status status : path) {
 			application.changeStatus(status);
 		}

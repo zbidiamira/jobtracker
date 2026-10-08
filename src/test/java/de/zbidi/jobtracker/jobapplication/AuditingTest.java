@@ -8,6 +8,8 @@ import de.zbidi.jobtracker.PostgresTestcontainersConfiguration;
 import de.zbidi.jobtracker.TestClockConfiguration;
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.config.JpaAuditingConfig;
+import de.zbidi.jobtracker.user.AppUser;
+import de.zbidi.jobtracker.user.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -40,17 +42,19 @@ class AuditingTest {
 	@Autowired
 	MutableClock clock;
 
+	private AppUser owner;
 	private Company company;
 
 	@BeforeEach
 	void setUp() {
 		clock.setInstant(T0);
+		owner = em.persist(new AppUser("alice@example.com", "$2a$10$hash", Role.USER));
 		company = em.persist(new Company("ACME GmbH", "Berlin", null));
 	}
 
 	@Test
 	void createdAtAndUpdatedAtComeFromClock() {
-		Long id = jobApplicationRepository.saveAndFlush(new JobApplication(company, "Java Developer", null)).getId();
+		Long id = jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null)).getId();
 		em.clear();
 
 		JobApplication loaded = jobApplicationRepository.findById(id).orElseThrow();
@@ -61,7 +65,7 @@ class AuditingTest {
 
 	@Test
 	void updateMovesUpdatedAtButKeepsCreatedAt() {
-		JobApplication application = jobApplicationRepository.saveAndFlush(new JobApplication(company, "Java Developer", null));
+		JobApplication application = jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null));
 
 		clock.advance(Duration.ofHours(1));
 		application.changeStatus(Status.APPLIED);
@@ -75,7 +79,7 @@ class AuditingTest {
 
 	@Test
 	void statusChangeTimestampComesFromClock() {
-		JobApplication application = jobApplicationRepository.saveAndFlush(new JobApplication(company, "Java Developer", null));
+		JobApplication application = jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null));
 		clock.advance(Duration.ofMinutes(30));
 
 		StatusHistory change = statusHistoryRepository.saveAndFlush(new StatusHistory(application, Status.SAVED, Status.APPLIED));

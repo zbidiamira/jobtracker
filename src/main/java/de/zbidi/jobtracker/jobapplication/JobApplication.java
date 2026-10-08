@@ -5,6 +5,7 @@ import java.util.Objects;
 
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.recruiter.Recruiter;
+import de.zbidi.jobtracker.user.AppUser;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.EntityListeners;
@@ -30,6 +31,11 @@ public class JobApplication {
 	@Id
 	@GeneratedValue(strategy = GenerationType.IDENTITY)
 	private Long id;
+
+	/** The user this application belongs to; only they can see or change it. */
+	@ManyToOne(fetch = FetchType.LAZY, optional = false)
+	@JoinColumn(name = "owner_id", nullable = false, updatable = false)
+	private AppUser owner;
 
 	@ManyToOne(fetch = FetchType.LAZY, optional = false)
 	@JoinColumn(name = "company_id", nullable = false)
@@ -64,11 +70,12 @@ public class JobApplication {
 		// for JPA
 	}
 
-	public JobApplication(Company company, String position, String jobUrl) {
-		this(company, null, position, jobUrl);
+	public JobApplication(AppUser owner, Company company, String position, String jobUrl) {
+		this(owner, company, null, position, jobUrl);
 	}
 
-	public JobApplication(Company company, Recruiter recruiter, String position, String jobUrl) {
+	public JobApplication(AppUser owner, Company company, Recruiter recruiter, String position, String jobUrl) {
+		this.owner = Objects.requireNonNull(owner, "owner must not be null");
 		this.company = Objects.requireNonNull(company, "company must not be null");
 		this.recruiter = recruiter;
 		this.position = Objects.requireNonNull(position, "position must not be null");
@@ -90,6 +97,10 @@ public class JobApplication {
 
 	public Long getId() {
 		return id;
+	}
+
+	public AppUser getOwner() {
+		return owner;
 	}
 
 	public Company getCompany() {

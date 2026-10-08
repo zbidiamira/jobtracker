@@ -4,6 +4,8 @@ import de.zbidi.jobtracker.PostgresTestcontainersConfiguration;
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.config.JpaAuditingConfig;
 import de.zbidi.jobtracker.recruiter.Recruiter;
+import de.zbidi.jobtracker.user.AppUser;
+import de.zbidi.jobtracker.user.Role;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -27,17 +29,19 @@ class JobApplicationRepositoryTest {
 	@Autowired
 	TestEntityManager em;
 
+	private AppUser owner;
 	private Company company;
 
 	@BeforeEach
 	void setUp() {
+		owner = em.persist(new AppUser("alice@example.com", "$2a$10$hash", Role.USER));
 		company = em.persist(new Company("ACME GmbH", "Berlin", null));
 	}
 
 	@Test
 	void persistsWithAuditTimestampsAndInitialVersion() {
 		JobApplication saved = jobApplicationRepository.save(
-				new JobApplication(company, "Java Developer", "https://acme.example/jobs/1"));
+				new JobApplication(owner, company, "Java Developer", "https://acme.example/jobs/1"));
 		em.flush();
 		em.clear();
 
@@ -53,7 +57,7 @@ class JobApplicationRepositoryTest {
 	@Test
 	void updateIncrementsVersionAndKeepsCreatedAt() {
 		Long id = jobApplicationRepository.saveAndFlush(
-				new JobApplication(company, "Java Developer", null)).getId();
+				new JobApplication(owner, company, "Java Developer", null)).getId();
 		em.clear();
 		// read back from the DB: Postgres stores microseconds, the JVM clock may have more precision
 		JobApplication saved = jobApplicationRepository.findById(id).orElseThrow();
@@ -74,42 +78,79 @@ class JobApplicationRepositoryTest {
 
 	@Test
 	void databaseRejectsDuplicateJobUrl() {
-		jobApplicationRepository.saveAndFlush(new JobApplication(company, "Java Developer", "https://acme.example/jobs/1"));
+		jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", "https://acme.example/jobs/1"));
 
 		assertThatExceptionOfType(DataIntegrityViolationException.class)
 				.isThrownBy(() -> jobApplicationRepository.saveAndFlush(
-						new JobApplication(company, "Other title", "https://acme.example/jobs/1")));
+						new JobApplication(owner, company, "Other title", "https://acme.example/jobs/1")));
 	}
 
 	@Test
 	void databaseRejectsDuplicateCompanyAndPositionIgnoringCase() {
-		jobApplicationRepository.saveAndFlush(new JobApplication(company, "Java Developer", null));
+		jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null));
 
 		assertThatExceptionOfType(DataIntegrityViolationException.class)
 				.isThrownBy(() -> jobApplicationRepository.saveAndFlush(
-						new JobApplication(company, "JAVA DEVELOPER", null)));
+						new JobApplication(owner, company, "JAVA DEVELOPER", null)));
 	}
 
 	@Test
 	void databaseRejectsTwoActiveApplicationsForSameRecruiter() {
 		Recruiter anna = em.persist(new Recruiter("Anna Schmidt", "anna@acme.example", company));
-		JobApplication first = new JobApplication(company, anna, "Java Developer", null);
+		JobApplication first = new JobApplication(owner, company, anna, "Java Developer", null);
 		first.changeStatus(Status.APPLIED);
 		jobApplicationRepository.saveAndFlush(first);
 
-		JobApplication second = new JobApplication(company, anna, "Kotlin Developer", null);
+		JobApplication second = new JobApplication(owner, company, anna, "Kotlin Developer", null);
 		second.changeStatus(Status.APPLIED);
 
 		assertThatExceptionOfType(DataIntegrityViolationException.class)
 				.isThrownBy(() -> jobApplicationRepository.saveAndFlush(second));
 	}
 
+	// --- the duplicate rules are per owner (V6): another user may track the same job ---
+
+	@Test
+	void sameJobUrlAllowedForDifferentOwners() {
+		jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", "https://acme.example/jobs/1"));
+
+		JobApplication bobs = jobApplicationRepository.saveAndFlush(
+				new JobApplication(bob(), company, "Java Developer", "https://acme.example/jobs/1"));
+
+		assertThat(bobs.getId()).isNotNull();
+	}
+
+	@Test
+	void differentOwnersCanBothHaveAnActiveApplicationWithTheSameRecruiter() {
+		Recruiter anna = em.persist(new Recruiter("Anna Schmidt", "anna@acme.example", company));
+		JobApplication alices = new JobApplication(owner, company, anna, "Java Developer", null);
+		alices.changeStatus(Status.APPLIED);
+		jobApplicationRepository.saveAndFlush(alices);
+
+		JobApplication bobs = new JobApplication(bob(), company, anna, "Java Developer", null);
+		bobs.changeStatus(Status.APPLIED);
+
+		assertThat(jobApplicationRepository.saveAndFlush(bobs).getId()).isNotNull();
+	}
+
+	@Test
+	void findsOnlyTheOwnersApplicationById() {
+		Long id = jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null)).getId();
+
+		assertThat(jobApplicationRepository.findByIdAndOwnerId(id, owner.getId())).isPresent();
+		assertThat(jobApplicationRepository.findByIdAndOwnerId(id, bob().getId())).isEmpty();
+	}
+
+	private AppUser bob() {
+		return em.persist(new AppUser("bob-" + System.nanoTime() + "@example.com", "$2a$10$hash", Role.USER));
+	}
+
 	@Test
 	void findsByStatusAndByCompany() {
-		JobApplication applied = new JobApplication(company, "Backend Developer", null);
+		JobApplication applied = new JobApplication(owner, company, "Backend Developer", null);
 		applied.changeStatus(Status.APPLIED);
 		jobApplicationRepository.save(applied);
-		jobApplicationRepository.save(new JobApplication(company, "Frontend Developer", null));
+		jobApplicationRepository.save(new JobApplication(owner, company, "Frontend Developer", null));
 		em.flush();
 		em.clear();
 

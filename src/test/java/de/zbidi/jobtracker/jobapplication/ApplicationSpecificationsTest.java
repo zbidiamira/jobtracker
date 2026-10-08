@@ -10,6 +10,8 @@ import de.zbidi.jobtracker.PostgresTestcontainersConfiguration;
 import de.zbidi.jobtracker.TestClockConfiguration;
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.config.JpaAuditingConfig;
+import de.zbidi.jobtracker.user.AppUser;
+import de.zbidi.jobtracker.user.Role;
 import jakarta.persistence.EntityManagerFactory;
 import org.hibernate.SessionFactory;
 import org.hibernate.stat.Statistics;
@@ -47,11 +49,13 @@ class ApplicationSpecificationsTest {
 	@Autowired
 	EntityManagerFactory entityManagerFactory;
 
+	private AppUser owner;
 	private Company acme;
 	private Company globex;
 
 	@BeforeEach
 	void setUp() {
+		owner = em.persist(new AppUser("alice@example.com", "$2a$10$hash", Role.USER));
 		acme = em.persist(new Company("ACME GmbH", "Berlin", null));
 		globex = em.persist(new Company("Globex Corp", "Munich", null));
 	}
@@ -136,6 +140,31 @@ class ApplicationSpecificationsTest {
 		assertThat(positions(search(null, "  ", "", null, null))).containsExactly("A Dev");
 	}
 
+	// --- ownership: every search is limited to the caller's own applications ---
+
+	@Test
+	void onlyReturnsTheOwnersApplications() {
+		createAt("2026-10-01T10:00", acme, "Alice Dev");
+		saveForOtherOwner(acme, "Bob Dev");
+
+		assertThat(positions(search(null, null, null, null, null))).containsExactly("Alice Dev");
+	}
+
+	@Test
+	void filtersOnlyApplyWithinTheOwnersApplications() {
+		createAt("2026-10-01T10:00", acme, "Java Developer", Status.APPLIED);
+		saveForOtherOwner(acme, "Java Developer");
+
+		assertThat(positions(search(null, "acme", "java", null, null))).containsExactly("Java Developer");
+		assertThat(repository.findAll(ApplicationSpecifications.matching(owner.getId(),
+				search(null, "acme", "java", null, null), BERLIN), PageRequest.of(0, 10)).getTotalElements()).isEqualTo(1);
+	}
+
+	private void saveForOtherOwner(Company company, String position) {
+		AppUser bob = em.persist(new AppUser("bob@example.com", "$2a$10$hash", Role.USER));
+		repository.saveAndFlush(new JobApplication(bob, company, position, null));
+	}
+
 	// --- N+1 ---
 
 	@Test
@@ -149,7 +178,7 @@ class ApplicationSpecificationsTest {
 		stats.clear();
 
 		// page size 3 of 5 results: 1 select for the rows + 1 count query
-		var page = repository.findAll(ApplicationSpecifications.matching(search(null, null, "dev", null, null), BERLIN),
+		var page = repository.findAll(ApplicationSpecifications.matching(owner.getId(), search(null, null, "dev", null, null), BERLIN),
 				PageRequest.of(0, 3, Sort.by("position")));
 		List<String> companyNames = page.map(application -> application.getCompany().getName()).getContent();
 
@@ -166,7 +195,7 @@ class ApplicationSpecificationsTest {
 	/** Creates an application "at" the given Berlin local time and walks it through the given statuses. */
 	private void createAt(String berlinDateTime, Company company, String position, Status... path) {
 		clock.setInstant(LocalDateTime.parse(berlinDateTime).atZone(BERLIN).toInstant());
-		JobApplication application = new JobApplication(company, position, null);
+		JobApplication application = new JobApplication(owner, company, position, null);
 		for (Status status : path) {
 			application.changeStatus(status);
 		}
@@ -174,7 +203,7 @@ class ApplicationSpecificationsTest {
 	}
 
 	private List<String> positions(JobApplicationSearch search) {
-		return repository.findAll(ApplicationSpecifications.matching(search, BERLIN),
+		return repository.findAll(ApplicationSpecifications.matching(owner.getId(), search, BERLIN),
 						PageRequest.of(0, 50, Sort.by("position")))
 				.map(JobApplication::getPosition)
 				.getContent();

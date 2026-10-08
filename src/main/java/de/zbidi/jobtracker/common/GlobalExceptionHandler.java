@@ -2,10 +2,12 @@ package de.zbidi.jobtracker.common;
 
 import java.util.List;
 
+import de.zbidi.jobtracker.company.CompanyInUseException;
 import de.zbidi.jobtracker.jobapplication.DuplicateApplicationException;
 import de.zbidi.jobtracker.jobapplication.InvalidStatusTransitionException;
 import de.zbidi.jobtracker.jobapplication.RecruiterConflictException;
 import de.zbidi.jobtracker.jobapplication.StaleVersionException;
+import de.zbidi.jobtracker.user.EmailAlreadyRegisteredException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
@@ -14,6 +16,9 @@ import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ProblemDetail;
 import org.springframework.http.ResponseEntity;
 import org.springframework.orm.ObjectOptimisticLockingFailureException;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.security.authentication.BadCredentialsException;
+import org.springframework.security.core.AuthenticationException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -45,6 +50,35 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(ResourceNotFoundException.class)
 	ProblemDetail handleNotFound(ResourceNotFoundException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.NOT_FOUND, ex.getMessage());
+	}
+
+	// --- security: login failures come from AuthService, the rest from the SecurityConfig entry points ---
+
+	/** Wrong email or password at login; same message for both. */
+	@ExceptionHandler(BadCredentialsException.class)
+	ProblemDetail handleBadCredentials(BadCredentialsException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, ex.getMessage());
+	}
+
+	/** Missing, malformed, expired or wrongly signed token. Details stay in the WWW-Authenticate header. */
+	@ExceptionHandler(AuthenticationException.class)
+	ProblemDetail handleUnauthenticated(AuthenticationException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.UNAUTHORIZED, "Missing or invalid bearer token");
+	}
+
+	@ExceptionHandler(AccessDeniedException.class)
+	ProblemDetail handleForbidden(AccessDeniedException ex) {
+		return ProblemDetail.forStatusAndDetail(HttpStatus.FORBIDDEN, "You are not allowed to do this");
+	}
+
+	@ExceptionHandler(EmailAlreadyRegisteredException.class)
+	ProblemDetail handleEmailTaken(EmailAlreadyRegisteredException ex) {
+		return conflict("Email already registered", ex.getMessage());
+	}
+
+	@ExceptionHandler(CompanyInUseException.class)
+	ProblemDetail handleCompanyInUse(CompanyInUseException ex) {
+		return conflict("Company in use", ex.getMessage());
 	}
 
 	/** e.g. {@code ?sort=doesNotExist} */

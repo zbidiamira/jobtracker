@@ -8,11 +8,13 @@ import java.util.List;
 import java.util.UUID;
 
 import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
 import org.springframework.context.annotation.Import;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
@@ -31,6 +33,14 @@ class ApiIntegrationTest {
 
 	@Autowired
 	MockMvcTester mvc;
+
+	/** A fresh user per test; every API call sends its token. */
+	private String bearer;
+
+	@BeforeEach
+	void registerUser() {
+		bearer = ApiAuth.registerNewUser(mvc, "api");
+	}
 
 	@Test
 	void fullFlow() {
@@ -52,11 +62,11 @@ class ApiIntegrationTest {
 		assertThat(applied).hasStatus(HttpStatus.OK);
 		assertThat(applied).bodyJson().extractingPath("$.version").isEqualTo(1);
 
-		MvcTestResult loaded = mvc.get().uri("/api/applications/{id}", applicationId).exchange();
+		MvcTestResult loaded = mvc.get().uri("/api/applications/{id}", applicationId).header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 		assertThat(loaded).hasStatus(HttpStatus.OK);
 		assertThat(loaded).bodyJson().extractingPath("$.companyName").isEqualTo("ACME " + suffix);
 
-		MvcTestResult list = mvc.get().uri("/api/applications?status=APPLIED&size=100").exchange();
+		MvcTestResult list = mvc.get().uri("/api/applications?status=APPLIED&size=100").header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 		assertThat(list).hasStatus(HttpStatus.OK);
 		List<Integer> ids = JsonPath.read(contentOf(list), "$.content[*].id");
 		assertThat(ids).contains(applicationId);
@@ -85,7 +95,7 @@ class ApiIntegrationTest {
 		assertThat(result).bodyJson().extractingPath("$.currentStatus").isEqualTo("REJECTED");
 		assertThat(result).bodyJson().extractingPath("$.requestedStatus").isEqualTo("INTERVIEW");
 		// nothing was changed in the database
-		MvcTestResult reloaded = mvc.get().uri("/api/applications/{id}", applicationId).exchange();
+		MvcTestResult reloaded = mvc.get().uri("/api/applications/{id}", applicationId).header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 		assertThat(reloaded).bodyJson().extractingPath("$.status").isEqualTo("REJECTED");
 		assertThat(reloaded).bodyJson().extractingPath("$.version").isEqualTo(2);
 	}
@@ -108,7 +118,7 @@ class ApiIntegrationTest {
 		assertThat(client2).bodyJson().extractingPath("$.title").isEqualTo("Concurrent modification");
 		assertThat(client2).bodyJson().extractingPath("$.currentVersion").isEqualTo(1);
 		// client 1's change is kept, client 2's is not applied
-		MvcTestResult reloaded = mvc.get().uri("/api/applications/{id}", applicationId).exchange();
+		MvcTestResult reloaded = mvc.get().uri("/api/applications/{id}", applicationId).header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 		assertThat(reloaded).bodyJson().extractingPath("$.status").isEqualTo("APPLIED");
 	}
 
@@ -127,7 +137,7 @@ class ApiIntegrationTest {
 		String today = LocalDate.now(ZoneId.of("Europe/Berlin")).toString();
 
 		MvcTestResult page = mvc.get().uri("/api/applications/search?status=APPLIED&companyName=" + suffix
-				+ "&position=java&createdFrom=" + today + "&createdTo=" + today + "&size=2&page=1&sort=position").exchange();
+				+ "&position=java&createdFrom=" + today + "&createdTo=" + today + "&size=2&page=1&sort=position").header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 
 		assertThat(page).hasStatus(HttpStatus.OK);
 		assertThat(page).bodyJson().extractingPath("$.totalElements").isEqualTo(3);
@@ -151,7 +161,7 @@ class ApiIntegrationTest {
 				""".formatted(companyId, suffix))), "$.id");
 
 		// read back from the database (Postgres stores microseconds, so compare stored values with each other)
-		String afterInsert = contentOf(mvc.get().uri("/api/applications/{id}", applicationId).exchange());
+		String afterInsert = contentOf(mvc.get().uri("/api/applications/{id}", applicationId).header(HttpHeaders.AUTHORIZATION, bearer).exchange());
 		String createdAt = JsonPath.read(afterInsert, "$.createdAt");
 		String updatedAtAfterInsert = JsonPath.read(afterInsert, "$.updatedAt");
 		assertThat(createdAt).as("createdAt set on insert").isNotNull();
@@ -159,7 +169,7 @@ class ApiIntegrationTest {
 
 		assertThat(patchStatus(applicationId, "APPLIED")).hasStatus(HttpStatus.OK);
 
-		String afterUpdate = contentOf(mvc.get().uri("/api/applications/{id}", applicationId).exchange());
+		String afterUpdate = contentOf(mvc.get().uri("/api/applications/{id}", applicationId).header(HttpHeaders.AUTHORIZATION, bearer).exchange());
 		assertThat(Instant.parse(JsonPath.read(afterUpdate, "$.updatedAt")))
 				.as("updatedAt moves on update").isAfter(Instant.parse(updatedAtAfterInsert));
 		assertThat((String) JsonPath.read(afterUpdate, "$.createdAt")).as("createdAt unchanged").isEqualTo(createdAt);
@@ -181,13 +191,34 @@ class ApiIntegrationTest {
 	}
 
 	@Test
-	void apiIsReachableWithoutAuthentication() {
-		assertThat(mvc.get().uri("/api/companies").exchange()).hasStatus(HttpStatus.OK);
+	void apiRequiresAToken() {
+		MvcTestResult result = mvc.get().uri("/api/companies").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.UNAUTHORIZED).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(mvc.get().uri("/api/companies").header(HttpHeaders.AUTHORIZATION, bearer).exchange())
+				.hasStatus(HttpStatus.OK);
+	}
+
+	@Test
+	void healthIsPublic() {
+		assertThat(mvc.get().uri("/actuator/health").exchange()).hasStatus(HttpStatus.OK);
+	}
+
+	@Test
+	void openApiDocsDeclareBearerSecurity() {
+		MvcTestResult result = mvc.get().uri("/v3/api-docs").exchange();
+
+		assertThat(result).hasStatus(HttpStatus.OK);
+		assertThat(result).bodyJson().extractingPath("$.components.securitySchemes.bearerAuth.type").isEqualTo("http");
+		assertThat(result).bodyJson().extractingPath("$.components.securitySchemes.bearerAuth.scheme").isEqualTo("bearer");
+		assertThat(result).bodyJson().extractingPath("$.components.securitySchemes.bearerAuth.bearerFormat").isEqualTo("JWT");
+		// a global requirement makes Swagger UI show the "Authorize" button and send the token everywhere
+		assertThat(result).bodyJson().extractingPath("$.security[0].bearerAuth").asArray().isEmpty();
 	}
 
 	@Test
 	void unknownSortPropertyReturns400() {
-		MvcTestResult result = mvc.get().uri("/api/companies?sort=doesNotExist").exchange();
+		MvcTestResult result = mvc.get().uri("/api/companies?sort=doesNotExist").header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 	}
@@ -218,12 +249,12 @@ class ApiIntegrationTest {
 	}
 
 	private MvcTestResult postJson(String uri, String json) {
-		return mvc.post().uri(uri).contentType(MediaType.APPLICATION_JSON).content(json).exchange();
+		return mvc.post().uri(uri).contentType(MediaType.APPLICATION_JSON).content(json).header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 	}
 
 	/** Like a real client: GET the current version, then PATCH with it. */
 	private MvcTestResult patchStatus(Integer id, String status) {
-		Integer version = JsonPath.read(contentOf(mvc.get().uri("/api/applications/{id}", id).exchange()), "$.version");
+		Integer version = JsonPath.read(contentOf(mvc.get().uri("/api/applications/{id}", id).header(HttpHeaders.AUTHORIZATION, bearer).exchange()), "$.version");
 		return patchStatus(id, status, version);
 	}
 
@@ -231,7 +262,7 @@ class ApiIntegrationTest {
 		return mvc.patch().uri("/api/applications/{id}/status", id)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{\"status\": \"%s\", \"version\": %d}".formatted(status, version))
-				.exchange();
+				.header(HttpHeaders.AUTHORIZATION, bearer).exchange();
 	}
 
 	private static String contentOf(MvcTestResult result) {

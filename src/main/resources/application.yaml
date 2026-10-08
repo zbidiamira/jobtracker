@@ -20,3 +20,16 @@ spring:
       initialize-schema: always
     job:
       enabled: false
+
+jobtracker:
+  jwt:
+    issuer: jobtracker
+    ttl: 1h
+    # RSA key pair, never committed. Production: EITHER mounted secret files (preferred) OR inline PEM env vars.
+    # Files: JOBTRACKER_JWT_PUBLIC_KEY_LOCATION=file:/run/secrets/jwt-public.pem (+ _PRIVATE_KEY_LOCATION)
+    # Inline: JOBTRACKER_JWT_PUBLIC_KEY / JOBTRACKER_JWT_PRIVATE_KEY containing the PEM text
+    # Nothing set (dev): a temporary key pair is generated at startup; tokens don't survive a restart.
+    public-key: ${JOBTRACKER_JWT_PUBLIC_KEY:}
+    private-key: ${JOBTRACKER_JWT_PRIVATE_KEY:}
+    public-key-location: ${JOBTRACKER_JWT_PUBLIC_KEY_LOCATION:}
+    private-key-location: ${JOBTRACKER_JWT_PRIVATE_KEY_LOCATION:}

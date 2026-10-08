@@ -5,6 +5,9 @@ import java.util.UUID;
 import de.zbidi.jobtracker.TestcontainersConfiguration;
 import de.zbidi.jobtracker.company.Company;
 import de.zbidi.jobtracker.company.CompanyRepository;
+import de.zbidi.jobtracker.user.AppUser;
+import de.zbidi.jobtracker.user.AppUserRepository;
+import de.zbidi.jobtracker.user.Role;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -30,13 +33,17 @@ class OptimisticLockingTest {
 	CompanyRepository companyRepository;
 
 	@Autowired
+	AppUserRepository appUserRepository;
+
+	@Autowired
 	TransactionTemplate tx;
 
 	@Test
 	void secondWriterWithStaleEntityFails() {
 		String suffix = UUID.randomUUID().toString().substring(0, 8);
+		AppUser owner = appUserRepository.save(new AppUser("lock-" + suffix + "@example.com", "$2a$10$hash", Role.USER));
 		Company company = companyRepository.save(new Company("Lock " + suffix, null, null));
-		Long id = jobApplicationRepository.save(new JobApplication(company, "Dev " + suffix, null)).getId();
+		Long id = jobApplicationRepository.save(new JobApplication(owner, company, "Dev " + suffix, null)).getId();
 
 		// A reads version 0 ...
 		JobApplication staleCopy = tx.execute(status -> jobApplicationRepository.findById(id).orElseThrow());

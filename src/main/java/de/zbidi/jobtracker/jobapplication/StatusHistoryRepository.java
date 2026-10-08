@@ -9,4 +9,6 @@ public interface StatusHistoryRepository extends JpaRepository<StatusHistory, Lo
 	// id as tie-breaker: two changes can share the same timestamp
 	List<StatusHistory> findByJobApplicationIdOrderByChangedAtAscIdAsc(Long jobApplicationId);
 
+	void deleteByJobApplicationId(Long jobApplicationId);
+
 }

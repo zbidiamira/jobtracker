@@ -20,8 +20,12 @@ public final class ApplicationSpecifications {
 	private ApplicationSpecifications() {
 	}
 
-	public static Specification<JobApplication> matching(JobApplicationSearch search, ZoneId zone) {
+	/**
+	 * The owner condition is always included: a search never sees other users' applications.
+	 */
+	public static Specification<JobApplication> matching(Long ownerId, JobApplicationSearch search, ZoneId zone) {
 		List<Specification<JobApplication>> conditions = new ArrayList<>();
+		conditions.add(ownedBy(ownerId));
 		if (search.status() != null) {
 			conditions.add(hasStatus(search.status()));
 		}
@@ -37,7 +41,12 @@ public final class ApplicationSpecifications {
 		if (search.createdTo() != null) {
 			conditions.add(createdOnOrBefore(search.createdTo(), zone));
 		}
-		return conditions.isEmpty() ? Specification.unrestricted() : Specification.allOf(conditions);
+		return Specification.allOf(conditions);
+	}
+
+	/** {@code owner_id = ?}; the FK column is compared directly, no join needed. */
+	public static Specification<JobApplication> ownedBy(Long ownerId) {
+		return (root, query, cb) -> cb.equal(root.get("owner").get("id"), ownerId);
 	}
 
 	public static Specification<JobApplication> hasStatus(Status status) {

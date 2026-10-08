@@ -2,6 +2,7 @@ package de.zbidi.jobtracker.company;
 
 import java.util.List;
 
+import de.zbidi.jobtracker.TestJwt;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -85,7 +87,7 @@ class CompanyControllerTest {
 	void getByIdReturns200() {
 		given(companyService.get(1L)).willReturn(ACME);
 
-		MvcTestResult result = mvc.get().uri("/api/companies/1").exchange();
+		MvcTestResult result = mvc.get().uri("/api/companies/1").with(TestJwt.user(1L)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$.city").isEqualTo("Berlin");
@@ -95,7 +97,7 @@ class CompanyControllerTest {
 	void getUnknownIdReturns404Problem() {
 		given(companyService.get(99L)).willThrow(new ResourceNotFoundException("Company", 99L));
 
-		MvcTestResult result = mvc.get().uri("/api/companies/99").exchange();
+		MvcTestResult result = mvc.get().uri("/api/companies/99").with(TestJwt.user(1L)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.NOT_FOUND).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 		assertThat(result).bodyJson().extractingPath("$.detail").isEqualTo("Company 99 not found");
@@ -105,7 +107,7 @@ class CompanyControllerTest {
 	void listPassesPageableAndReturnsPageResponse() {
 		given(companyService.list(any())).willReturn(new PageResponse<>(List.of(ACME), 1, 5, 6, 2));
 
-		MvcTestResult result = mvc.get().uri("/api/companies?page=1&size=5&sort=name").exchange();
+		MvcTestResult result = mvc.get().uri("/api/companies?page=1&size=5&sort=name").with(TestJwt.user(1L)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$.content[0].name").isEqualTo("ACME GmbH");
@@ -118,8 +120,26 @@ class CompanyControllerTest {
 		assertThat(pageable.getValue().getSort()).isEqualTo(Sort.by("name"));
 	}
 
+	// --- DELETE (ADMIN only; the 403 for USER is in SecurityRulesTest) ---
+
+	@Test
+	void deleteAsAdminReturns204() {
+		assertThat(mvc.delete().uri("/api/companies/1").with(TestJwt.admin(1L)).exchange()).hasStatus(HttpStatus.NO_CONTENT);
+		verify(companyService).delete(1L);
+	}
+
+	@Test
+	void deleteReferencedCompanyReturns409() {
+		willThrow(new CompanyInUseException(1L)).given(companyService).delete(1L);
+
+		MvcTestResult result = mvc.delete().uri("/api/companies/1").with(TestJwt.admin(1L)).exchange();
+
+		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.detail").asString().contains("still has job applications");
+	}
+
 	private MvcTestResult post(String json) {
-		return mvc.post().uri("/api/companies").contentType(MediaType.APPLICATION_JSON).content(json).exchange();
+		return mvc.post().uri("/api/companies").contentType(MediaType.APPLICATION_JSON).content(json).with(TestJwt.user(1L)).exchange();
 	}
 
 }

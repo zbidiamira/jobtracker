@@ -2,6 +2,7 @@ package de.zbidi.jobtracker.jobapplication;
 
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
@@ -22,10 +23,16 @@ public interface JobApplicationRepository extends JpaRepository<JobApplication, 
 
 	List<JobApplication> findByCompanyId(Long companyId);
 
-	boolean existsByJobUrl(String jobUrl);
+	// --- scoped to one owner: someone else's application is simply not found ---
 
-	boolean existsByCompanyIdAndPositionIgnoreCase(Long companyId, String position);
+	Optional<JobApplication> findByIdAndOwnerId(Long id, Long ownerId);
 
-	boolean existsByRecruiterIdAndStatusInAndIdNot(Long recruiterId, Collection<Status> statuses, Long id);
+	boolean existsByIdAndOwnerId(Long id, Long ownerId);
+
+	boolean existsByOwnerIdAndJobUrl(Long ownerId, String jobUrl);
+
+	boolean existsByOwnerIdAndCompanyIdAndPositionIgnoreCase(Long ownerId, Long companyId, String position);
+
+	boolean existsByOwnerIdAndRecruiterIdAndStatusInAndIdNot(Long ownerId, Long recruiterId, Collection<Status> statuses, Long id);
 
 }

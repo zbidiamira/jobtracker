@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 
+import de.zbidi.jobtracker.TestJwt;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
@@ -27,12 +28,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
+import static org.mockito.BDDMockito.willThrow;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
 @WebMvcTest(JobApplicationController.class)
 @Import({SecurityConfig.class, GlobalExceptionHandler.class})
 class JobApplicationControllerTest {
+
+	/** The caller: the JWT's sub claim. */
+	private static final long USER_ID = 42L;
 
 	private static final Instant NOW = Instant.parse("2026-10-06T10:00:00Z");
 
@@ -51,7 +56,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void postCreatesApplicationReturns201WithLocation() {
-		given(service.create(new NewJobApplication(1L, null, "Java Developer", "https://acme.example/jobs/1")))
+		given(service.create(USER_ID, new NewJobApplication(1L, null, "Java Developer", "https://acme.example/jobs/1")))
 				.willReturn(response(Status.SAVED));
 
 		MvcTestResult result = post("""
@@ -87,7 +92,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void postDuplicateReturns409() {
-		given(service.create(any())).willThrow(new DuplicateApplicationException("You already have an application for x"));
+		given(service.create(eq(USER_ID), any())).willThrow(new DuplicateApplicationException("You already have an application for x"));
 
 		MvcTestResult result = post("""
 				{"companyId": 1, "position": "Java Developer"}
@@ -100,7 +105,7 @@ class JobApplicationControllerTest {
 	@Test
 	void postRaceCaughtByUniqueIndexReturns409() {
 		// two identical requests passed the service check at the same time; the V2 unique index rejected the second
-		given(service.create(any())).willThrow(new DataIntegrityViolationException("ux_job_application_job_url"));
+		given(service.create(eq(USER_ID), any())).willThrow(new DataIntegrityViolationException("ux_job_application_job_url"));
 
 		MvcTestResult result = post("""
 				{"companyId": 1, "position": "Java Developer"}
@@ -114,7 +119,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void postWithUnknownCompanyReturns404() {
-		given(service.create(any())).willThrow(new ResourceNotFoundException("Company", 1L));
+		given(service.create(eq(USER_ID), any())).willThrow(new ResourceNotFoundException("Company", 1L));
 
 		MvcTestResult result = post("""
 				{"companyId": 1, "position": "Java Developer"}
@@ -127,9 +132,9 @@ class JobApplicationControllerTest {
 
 	@Test
 	void getByIdReturns200() {
-		given(service.get(5L)).willReturn(response(Status.APPLIED));
+		given(service.get(USER_ID, 5L)).willReturn(response(Status.APPLIED));
 
-		MvcTestResult result = mvc.get().uri("/api/applications/5").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/5").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$.status").isEqualTo("APPLIED");
@@ -138,9 +143,9 @@ class JobApplicationControllerTest {
 
 	@Test
 	void getUnknownIdReturns404() {
-		given(service.get(99L)).willThrow(new ResourceNotFoundException("Job application", 99L));
+		given(service.get(USER_ID, 99L)).willThrow(new ResourceNotFoundException("Job application", 99L));
 
-		MvcTestResult result = mvc.get().uri("/api/applications/99").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/99").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.NOT_FOUND).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 	}
@@ -149,11 +154,11 @@ class JobApplicationControllerTest {
 
 	@Test
 	void historyReturnsStatusChangesOldestFirst() {
-		given(service.history(5L)).willReturn(List.of(
+		given(service.history(USER_ID, 5L)).willReturn(List.of(
 				new StatusHistoryResponse(Status.SAVED, Status.APPLIED, NOW),
 				new StatusHistoryResponse(Status.APPLIED, Status.INTERVIEW, NOW.plusSeconds(60))));
 
-		MvcTestResult result = mvc.get().uri("/api/applications/5/history").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/5/history").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$[0].fromStatus").isEqualTo("SAVED");
@@ -163,9 +168,9 @@ class JobApplicationControllerTest {
 
 	@Test
 	void historyOfUnknownApplicationReturns404() {
-		given(service.history(99L)).willThrow(new ResourceNotFoundException("Job application", 99L));
+		given(service.history(USER_ID, 99L)).willThrow(new ResourceNotFoundException("Job application", 99L));
 
-		assertThat(mvc.get().uri("/api/applications/99/history").exchange()).hasStatus(HttpStatus.NOT_FOUND);
+		assertThat(mvc.get().uri("/api/applications/99/history").with(TestJwt.user(USER_ID)).exchange()).hasStatus(HttpStatus.NOT_FOUND);
 	}
 
 	// --- GET /api/applications ---
@@ -174,35 +179,35 @@ class JobApplicationControllerTest {
 
 	@Test
 	void listWithoutFiltersSearchesWithEmptyCriteria() {
-		given(service.search(eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(response(Status.SAVED)), 0, 20, 1, 1));
+		given(service.search(eq(USER_ID), eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(response(Status.SAVED)), 0, 20, 1, 1));
 
-		MvcTestResult result = mvc.get().uri("/api/applications").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		assertThat(result).bodyJson().extractingPath("$.content[0].id").isEqualTo(5);
-		verify(service).search(eq(NO_FILTER), any());
+		verify(service).search(eq(USER_ID), eq(NO_FILTER), any());
 	}
 
 	@Test
 	void plainListIgnoresFilterParameters() {
-		given(service.search(eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
+		given(service.search(eq(USER_ID), eq(NO_FILTER), any())).willReturn(new PageResponse<>(List.of(), 0, 20, 0, 0));
 
-		MvcTestResult result = mvc.get().uri("/api/applications?status=APPLIED&companyName=acme").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications?status=APPLIED&companyName=acme").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
-		verify(service).search(eq(NO_FILTER), any());
+		verify(service).search(eq(USER_ID), eq(NO_FILTER), any());
 	}
 
 	@Test
 	void searchBindsAllQueryParameters() {
-		given(service.search(any(), any())).willReturn(new PageResponse<>(List.of(), 1, 5, 0, 0));
+		given(service.search(eq(USER_ID), any(), any())).willReturn(new PageResponse<>(List.of(), 1, 5, 0, 0));
 
 		MvcTestResult result = mvc.get().uri("/api/applications/search?status=APPLIED&companyName=acme&position=java"
-				+ "&createdFrom=2026-10-01&createdTo=2026-10-07&page=1&size=5&sort=position").exchange();
+				+ "&createdFrom=2026-10-01&createdTo=2026-10-07&page=1&size=5&sort=position").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.OK);
 		ArgumentCaptor<Pageable> pageable = ArgumentCaptor.forClass(Pageable.class);
-		verify(service).search(eq(new JobApplicationSearch(Status.APPLIED, "acme", "java",
+		verify(service).search(eq(USER_ID), eq(new JobApplicationSearch(Status.APPLIED, "acme", "java",
 				LocalDate.of(2026, 10, 1), LocalDate.of(2026, 10, 7))), pageable.capture());
 		assertThat(pageable.getValue().getPageNumber()).isEqualTo(1);
 		assertThat(pageable.getValue().getPageSize()).isEqualTo(5);
@@ -211,7 +216,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void listWithUnknownStatusReturns400() {
-		MvcTestResult result = mvc.get().uri("/api/applications/search?status=SENT").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/search?status=SENT").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("status");
@@ -220,7 +225,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void searchWithInvalidDateReturns400() {
-		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=07.10.2026").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=07.10.2026").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 		assertThat(result).bodyJson().extractingPath("$.errors[0].field").isEqualTo("createdFrom");
@@ -229,7 +234,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void searchWithFromAfterToReturns400() {
-		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=2026-10-07&createdTo=2026-10-01").exchange();
+		MvcTestResult result = mvc.get().uri("/api/applications/search?createdFrom=2026-10-07&createdTo=2026-10-01").with(TestJwt.user(USER_ID)).exchange();
 
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST);
 		assertThat(result).bodyJson().extractingPath("$.errors[0].message")
@@ -241,7 +246,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchStatusReturns200WithNewStatus() {
-		given(service.changeStatus(5L, Status.APPLIED, 0L)).willReturn(response(Status.APPLIED));
+		given(service.changeStatus(USER_ID, 5L, Status.APPLIED, 0L)).willReturn(response(Status.APPLIED));
 
 		MvcTestResult result = patch(5L, """
 				{"status": "APPLIED", "version": 0}
@@ -272,7 +277,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchInvalidTransitionReturns409WithCurrentAndRequestedStatus() {
-		given(service.changeStatus(5L, Status.OFFER, 0L))
+		given(service.changeStatus(USER_ID, 5L, Status.OFFER, 0L))
 				.willThrow(new InvalidStatusTransitionException(Status.SAVED, Status.OFFER));
 
 		MvcTestResult result = patch(5L, """
@@ -289,7 +294,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchFromRejectedToInterviewReturns409Problem() {
-		given(service.changeStatus(5L, Status.INTERVIEW, 0L))
+		given(service.changeStatus(USER_ID, 5L, Status.INTERVIEW, 0L))
 				.willThrow(new InvalidStatusTransitionException(Status.REJECTED, Status.INTERVIEW));
 
 		MvcTestResult result = patch(5L, """
@@ -320,7 +325,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchWithStaleVersionReturns409WithBothVersions() {
-		given(service.changeStatus(5L, Status.INTERVIEW, 1L)).willThrow(new StaleVersionException(5L, 1L, 2L));
+		given(service.changeStatus(USER_ID, 5L, Status.INTERVIEW, 1L)).willThrow(new StaleVersionException(5L, 1L, 2L));
 
 		MvcTestResult result = patch(5L, """
 				{"status": "INTERVIEW", "version": 1}
@@ -334,7 +339,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchRecruiterConflictReturns409() {
-		given(service.changeStatus(5L, Status.APPLIED, 0L))
+		given(service.changeStatus(USER_ID, 5L, Status.APPLIED, 0L))
 				.willThrow(new RecruiterConflictException("Anna Schmidt already has your CV for another active application"));
 
 		MvcTestResult result = patch(5L, """
@@ -347,7 +352,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchUnknownIdReturns404() {
-		given(service.changeStatus(99L, Status.APPLIED, 0L)).willThrow(new ResourceNotFoundException("Job application", 99L));
+		given(service.changeStatus(USER_ID, 99L, Status.APPLIED, 0L)).willThrow(new ResourceNotFoundException("Job application", 99L));
 
 		MvcTestResult result = patch(99L, """
 				{"status": "APPLIED", "version": 0}
@@ -358,7 +363,7 @@ class JobApplicationControllerTest {
 
 	@Test
 	void patchOptimisticLockFailureReturns409() {
-		given(service.changeStatus(5L, Status.APPLIED, 0L))
+		given(service.changeStatus(USER_ID, 5L, Status.APPLIED, 0L))
 				.willThrow(new ObjectOptimisticLockingFailureException(JobApplication.class, 5L));
 
 		MvcTestResult result = patch(5L, """
@@ -368,13 +373,31 @@ class JobApplicationControllerTest {
 		assertThat(result).hasStatus(HttpStatus.CONFLICT).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 	}
 
+	// --- DELETE (ADMIN only; the 403 for USER is in SecurityRulesTest) ---
+
+	@Test
+	void deleteAsAdminReturns204() {
+		MvcTestResult result = mvc.delete().uri("/api/applications/5").with(TestJwt.admin(1L)).exchange();
+
+		assertThat(result).hasStatus(HttpStatus.NO_CONTENT);
+		verify(service).delete(5L);
+	}
+
+	@Test
+	void deleteUnknownReturns404() {
+		willThrow(new ResourceNotFoundException("Job application", 99L)).given(service).delete(99L);
+
+		assertThat(mvc.delete().uri("/api/applications/99").with(TestJwt.admin(1L)).exchange())
+				.hasStatus(HttpStatus.NOT_FOUND);
+	}
+
 	private MvcTestResult post(String json) {
-		return mvc.post().uri("/api/applications").contentType(MediaType.APPLICATION_JSON).content(json).exchange();
+		return mvc.post().uri("/api/applications").contentType(MediaType.APPLICATION_JSON).content(json).with(TestJwt.user(USER_ID)).exchange();
 	}
 
 	private MvcTestResult patch(Long id, String json) {
 		return mvc.patch().uri("/api/applications/{id}/status", id)
-				.contentType(MediaType.APPLICATION_JSON).content(json).exchange();
+				.contentType(MediaType.APPLICATION_JSON).content(json).with(TestJwt.user(USER_ID)).exchange();
 	}
 
 }
