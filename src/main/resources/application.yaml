@@ -20,6 +20,22 @@ spring:
       initialize-schema: always
     job:
       enabled: false
+  kafka:
+    # explicit, because Docker Compose support is disabled (compose.yaml publishes Kafka on 9092)
+    bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
+    producer:
+      acks: all
+      # value serializer: set in KafkaConfig (JSON for events, raw bytes for dead letters)
+    consumer:
+      group-id: history
+      auto-offset-reset: earliest
+      # a message that isn't valid JSON must not block the partition: ErrorHandlingDeserializer turns it
+      # into an error the DefaultErrorHandler sends straight to the DLT
+      value-deserializer: org.springframework.kafka.support.serializer.ErrorHandlingDeserializer
+      properties:
+        spring.deserializer.value.delegate.class: org.springframework.kafka.support.serializer.JacksonJsonDeserializer
+        spring.json.value.default.type: de.zbidi.jobtracker.jobapplication.StatusChangedEvent
+        spring.json.use.type.headers: false
 
 jobtracker:
   jwt:

@@ -20,7 +20,7 @@ docker compose up -d
 # Run a single test class
 ./mvnw test -Dtest=JobtrackerApplicationTests
 
-# Run with Testcontainers dev mode (auto-provisions Postgres; no Kafka container until Kafka is used)
+# Run with Testcontainers dev mode (auto-provisions Postgres + Kafka)
 ./mvnw spring-boot:test-run
 ```
 
@@ -54,8 +54,22 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
   user's application is a **404**, never a 403. Status changes need the `version` from the last read (409 if stale).
 - 401/403 are ProblemDetail like all other errors (`common/GlobalExceptionHandler`).
 
+### Events (Week 5, Kafka)
+- `docker compose up -d` starts PostgreSQL **and Kafka** (`apache/kafka`, KRaft, `localhost:9092`); the app connects via
+  `spring.kafka.bootstrap-servers` (env `KAFKA_BOOTSTRAP_SERVERS`), since Docker Compose support is disabled.
+- Status change → `StatusChangedEvent` (Spring event) → `StatusEventPublisher` sends it **after commit**
+  (`@TransactionalEventListener(AFTER_COMMIT)`) to topic `application-status`, key = application id →
+  `StatusHistoryListener` writes `status_history`, idempotent via unique `event_id` (V7).
+- History is **eventually consistent** (tests wait with Awaitility). Failures: 3 retries with backoff, then
+  `application-status.DLT` (set explicitly in `KafkaConfig`; Spring Kafka 4's default name would be `...-dlt`).
+- JSON via **`JacksonJsonSerializer`/`JacksonJsonDeserializer`** (Jackson 3, matches Boot 4), no type headers; the
+  consumer wraps it in `ErrorHandlingDeserializer`. Don't use the Jackson-2-based `JsonSerializer`.
+- Known gap: an event is lost if the app dies between commit and send (no transactional outbox yet).
+
 ### Testing
-- Testcontainers for integration tests (PostgreSQL; Kafka container to be added once Kafka is used)
+- Testcontainers for integration tests: `TestcontainersConfiguration` = shared static PostgreSQL + Kafka
+  (`apache/kafka`, not `kafka-native`, which crashes here) and a Kafka consumer group per Spring context;
+  `TopicProbe` reads topics directly in tests
 - `TestJobtrackerApplication` runs the app with Testcontainers for local development
 - Test config in `TestcontainersConfiguration.java`
 - `@WebMvcTest`: `@Import({SecurityConfig.class, GlobalExceptionHandler.class})` and authenticate requests with

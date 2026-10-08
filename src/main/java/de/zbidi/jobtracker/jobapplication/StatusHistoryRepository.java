@@ -1,6 +1,7 @@
 package de.zbidi.jobtracker.jobapplication;
 
 import java.util.List;
+import java.util.UUID;
 
 import org.springframework.data.jpa.repository.JpaRepository;
 
@@ -10,5 +11,7 @@ public interface StatusHistoryRepository extends JpaRepository<StatusHistory, Lo
 	List<StatusHistory> findByJobApplicationIdOrderByChangedAtAscIdAsc(Long jobApplicationId);
 
 	void deleteByJobApplicationId(Long jobApplicationId);
+
+	boolean existsByEventId(UUID eventId);
 
 }

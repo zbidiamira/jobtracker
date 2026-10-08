@@ -3,6 +3,7 @@ package de.zbidi.jobtracker.jobapplication;
 import java.time.Clock;
 import java.util.List;
 import java.util.Objects;
+import java.util.UUID;
 
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.common.ResourceNotFoundException;
@@ -11,6 +12,7 @@ import de.zbidi.jobtracker.company.CompanyRepository;
 import de.zbidi.jobtracker.recruiter.Recruiter;
 import de.zbidi.jobtracker.recruiter.RecruiterRepository;
 import de.zbidi.jobtracker.user.AppUserRepository;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -35,6 +37,7 @@ public class JobApplicationService {
 	private final RecruiterRepository recruiterRepository;
 	private final StatusHistoryRepository statusHistoryRepository;
 	private final AppUserRepository appUserRepository;
+	private final ApplicationEventPublisher events;
 	private final Clock clock;
 
 	public JobApplicationService(JobApplicationRepository jobApplicationRepository,
@@ -42,12 +45,14 @@ public class JobApplicationService {
 			RecruiterRepository recruiterRepository,
 			StatusHistoryRepository statusHistoryRepository,
 			AppUserRepository appUserRepository,
+			ApplicationEventPublisher events,
 			Clock clock) {
 		this.jobApplicationRepository = jobApplicationRepository;
 		this.companyRepository = companyRepository;
 		this.recruiterRepository = recruiterRepository;
 		this.statusHistoryRepository = statusHistoryRepository;
 		this.appUserRepository = appUserRepository;
+		this.events = events;
 		this.clock = clock;
 	}
 
@@ -111,8 +116,10 @@ public class JobApplicationService {
 		application.changeStatus(newStatus);
 		// flush so the response carries the incremented version and updated_at
 		JobApplication saved = jobApplicationRepository.saveAndFlush(application);
-		// same transaction: if writing the history fails, the status update above is rolled back too
-		statusHistoryRepository.save(new StatusHistory(saved, oldStatus, newStatus));
+		// The history is written by StatusHistoryListener from this event. The event goes to Kafka only after the
+		// commit (StatusEventPublisher), so a rolled-back change never shows up in the history.
+		events.publishEvent(new StatusChangedEvent(UUID.randomUUID(), saved.getId(), ownerId, oldStatus, newStatus,
+				saved.getUpdatedAt()));
 		return JobApplicationResponse.from(saved);
 	}
 

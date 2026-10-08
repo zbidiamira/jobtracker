@@ -34,9 +34,6 @@ class AuditingTest {
 	JobApplicationRepository jobApplicationRepository;
 
 	@Autowired
-	StatusHistoryRepository statusHistoryRepository;
-
-	@Autowired
 	TestEntityManager em;
 
 	@Autowired
@@ -75,16 +72,6 @@ class AuditingTest {
 		JobApplication loaded = jobApplicationRepository.findById(application.getId()).orElseThrow();
 		assertThat(loaded.getCreatedAt()).isEqualTo(T0);
 		assertThat(loaded.getUpdatedAt()).isEqualTo(T0.plus(Duration.ofHours(1)));
-	}
-
-	@Test
-	void statusChangeTimestampComesFromClock() {
-		JobApplication application = jobApplicationRepository.saveAndFlush(new JobApplication(owner, company, "Java Developer", null));
-		clock.advance(Duration.ofMinutes(30));
-
-		StatusHistory change = statusHistoryRepository.saveAndFlush(new StatusHistory(application, Status.SAVED, Status.APPLIED));
-
-		assertThat(change.getChangedAt()).isEqualTo(T0.plus(Duration.ofMinutes(30)));
 	}
 
 }

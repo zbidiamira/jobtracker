@@ -34,7 +34,7 @@ class StatusHistoryTableTest {
 				WHERE table_schema = 'public' AND table_name = 'status_history'
 				ORDER BY ordinal_position
 				""", String.class))
-				.containsExactly("id", "job_application_id", "from_status", "to_status", "changed_at");
+				.containsExactly("id", "job_application_id", "from_status", "to_status", "changed_at", "event_id");
 	}
 
 	private boolean tableExists(String name) {

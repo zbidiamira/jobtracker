@@ -1,5 +1,6 @@
 package de.zbidi.jobtracker;
 
+import java.time.Duration;
 import java.util.UUID;
 
 import com.jayway.jsonpath.JsonPath;
@@ -22,6 +23,7 @@ import org.springframework.test.web.servlet.assertj.MvcTestResult;
 
 import static de.zbidi.jobtracker.ApiAuth.content;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.awaitility.Awaitility.await;
 
 /**
  * Alice and Bob each only see their own applications. Someone else's application answers exactly like one that
@@ -124,6 +126,9 @@ class OwnershipIntegrationTest {
 		Integer id = createApplication(alice, "Java Developer");
 		assertThat(patch(alice, "/api/applications/" + id + "/status", "{\"status\": \"APPLIED\", \"version\": 0}"))
 				.hasStatus(HttpStatus.OK);
+		// the history row arrives asynchronously via Kafka; wait for it so the delete really has history to remove
+		await().atMost(Duration.ofSeconds(15)).until(() ->
+				!statusHistoryRepository.findByJobApplicationIdOrderByChangedAtAscIdAsc(id.longValue()).isEmpty());
 		String admin = adminToken();
 
 		assertThat(delete(admin, "/api/applications/" + id)).hasStatus(HttpStatus.NO_CONTENT);

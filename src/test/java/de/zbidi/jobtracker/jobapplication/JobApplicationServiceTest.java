@@ -23,6 +23,7 @@ import org.mockito.ArgumentMatchers;
 import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.data.domain.PageImpl;
 import org.springframework.data.domain.PageRequest;
 import org.springframework.data.domain.Pageable;
@@ -36,6 +37,7 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.BDDMockito.given;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 
@@ -64,6 +66,9 @@ class JobApplicationServiceTest {
 	@Mock
 	AppUserRepository appUserRepository;
 
+	@Mock
+	ApplicationEventPublisher events;
+
 	JobApplicationService service;
 
 	private final AppUser owner = withId(new AppUser("alice@example.com", "$2a$10$hash", Role.USER), OWNER_ID);
@@ -73,7 +78,7 @@ class JobApplicationServiceTest {
 	void setUp() {
 		Clock clock = Clock.fixed(Instant.parse("2026-10-07T10:00:00Z"), ZoneId.of("Europe/Berlin"));
 		service = new JobApplicationService(jobApplicationRepository, companyRepository, recruiterRepository,
-				statusHistoryRepository, appUserRepository, clock);
+				statusHistoryRepository, appUserRepository, events, clock);
 	}
 
 	// --- ownership ---
@@ -95,7 +100,7 @@ class JobApplicationServiceTest {
 		assertThatExceptionOfType(ResourceNotFoundException.class)
 				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L));
 		verify(jobApplicationRepository, never()).saveAndFlush(any());
-		verifyNoInteractions(statusHistoryRepository);
+		verifyNoInteractions(statusHistoryRepository, events);
 	}
 
 	@Test
@@ -105,7 +110,7 @@ class JobApplicationServiceTest {
 		assertThatExceptionOfType(ResourceNotFoundException.class)
 				.isThrownBy(() -> service.history(OWNER_ID, 5L))
 				.withMessage("Job application 5 not found");
-		verifyNoInteractions(statusHistoryRepository);
+		verifyNoInteractions(statusHistoryRepository, events);
 	}
 
 	@Test
@@ -158,7 +163,7 @@ class JobApplicationServiceTest {
 		given(jobApplicationRepository.findById(99L)).willReturn(Optional.empty());
 
 		assertThatExceptionOfType(ResourceNotFoundException.class).isThrownBy(() -> service.delete(99L));
-		verifyNoInteractions(statusHistoryRepository);
+		verifyNoInteractions(statusHistoryRepository, events);
 	}
 
 	// --- PATCH status ---
@@ -177,12 +182,14 @@ class JobApplicationServiceTest {
 				});
 		assertThat(rejected.getStatus()).isEqualTo(Status.REJECTED);
 		verify(jobApplicationRepository, never()).saveAndFlush(any());
-		verifyNoInteractions(statusHistoryRepository);
+		verifyNoInteractions(statusHistoryRepository, events);
 	}
 
 	@Test
-	void changeStatusSavesApplicationAndHistoryRow() {
+	void changeStatusPublishesStatusChangedEvent() {
 		JobApplication saved = application();
+		Instant updatedAt = Instant.parse("2026-10-07T10:00:00.123456Z");
+		ReflectionTestUtils.setField(saved, "updatedAt", updatedAt); // what auditing sets on flush
 		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(saved));
 		given(jobApplicationRepository.saveAndFlush(saved)).willReturn(saved);
 
@@ -190,11 +197,30 @@ class JobApplicationServiceTest {
 
 		assertThat(response.status()).isEqualTo(Status.APPLIED);
 		assertThat(response.companyName()).isEqualTo("ACME GmbH");
-		ArgumentCaptor<StatusHistory> change = ArgumentCaptor.forClass(StatusHistory.class);
-		verify(statusHistoryRepository).save(change.capture());
-		assertThat(change.getValue().getJobApplication()).isSameAs(saved);
-		assertThat(change.getValue().getFromStatus()).isEqualTo(Status.SAVED);
-		assertThat(change.getValue().getToStatus()).isEqualTo(Status.APPLIED);
+		ArgumentCaptor<StatusChangedEvent> event = ArgumentCaptor.forClass(StatusChangedEvent.class);
+		verify(events).publishEvent(event.capture());
+		assertThat(event.getValue().eventId()).isNotNull();
+		assertThat(event.getValue().applicationId()).isEqualTo(5L);
+		assertThat(event.getValue().ownerId()).isEqualTo(OWNER_ID);
+		assertThat(event.getValue().from()).isEqualTo(Status.SAVED);
+		assertThat(event.getValue().to()).isEqualTo(Status.APPLIED);
+		assertThat(event.getValue().changedAt()).isEqualTo(updatedAt);
+		// the history row is written by the Kafka listener now, not here
+		verifyNoInteractions(statusHistoryRepository);
+	}
+
+	@Test
+	void everyChangeGetsItsOwnEventId() {
+		JobApplication saved = application();
+		given(jobApplicationRepository.findByIdAndOwnerId(5L, OWNER_ID)).willReturn(Optional.of(saved));
+		given(jobApplicationRepository.saveAndFlush(saved)).willReturn(saved);
+
+		service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L);
+		service.changeStatus(OWNER_ID, 5L, Status.INTERVIEW, 0L);
+
+		ArgumentCaptor<StatusChangedEvent> events = ArgumentCaptor.forClass(StatusChangedEvent.class);
+		verify(this.events, times(2)).publishEvent(events.capture());
+		assertThat(events.getAllValues()).extracting(StatusChangedEvent::eventId).doesNotHaveDuplicates();
 	}
 
 	@Test
@@ -211,7 +237,7 @@ class JobApplicationServiceTest {
 				});
 		assertThat(current.getStatus()).isEqualTo(Status.APPLIED);
 		verify(jobApplicationRepository, never()).saveAndFlush(any());
-		verifyNoInteractions(statusHistoryRepository);
+		verifyNoInteractions(statusHistoryRepository, events);
 	}
 
 	@Test
@@ -226,6 +252,7 @@ class JobApplicationServiceTest {
 				.isThrownBy(() -> service.changeStatus(OWNER_ID, 5L, Status.APPLIED, 0L))
 				.withMessageContaining("Anna Schmidt");
 		verify(jobApplicationRepository, never()).saveAndFlush(any());
+		verifyNoInteractions(events);
 	}
 
 	// --- POST / GET ---
