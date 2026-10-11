@@ -17,9 +17,13 @@ spring:
     open-in-view: false
   batch:
     jdbc:
-      initialize-schema: always
+      initialize-schema: never   # V10 (Flyway) creates the Batch tables
     job:
       enabled: false
+  servlet:
+    multipart:
+      max-file-size: 5MB
+      max-request-size: 5MB
   kafka:
     # explicit, because Docker Compose support is disabled (compose.yaml publishes Kafka on 9092)
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -49,3 +53,10 @@ jobtracker:
     private-key: ${JOBTRACKER_JWT_PRIVATE_KEY:}
     public-key-location: ${JOBTRACKER_JWT_PUBLIC_KEY_LOCATION:}
     private-key-location: ${JOBTRACKER_JWT_PRIVATE_KEY_LOCATION:}
+  imports:
+    # uploaded CSVs are kept here: a restart reads the same file again
+    directory: ${JOBTRACKER_IMPORTS_DIRECTORY:${java.io.tmpdir}/jobtracker-imports}
+  reminder:
+    # APPLIED applications unchanged for this long get one ReminderEvent; checked daily at 08:00 (Europe/Berlin)
+    after: 14d
+    cron: ${JOBTRACKER_REMINDER_CRON:0 0 8 * * *}

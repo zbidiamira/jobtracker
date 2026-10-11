@@ -10,6 +10,8 @@ import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.company.CompanyResponse;
 import de.zbidi.jobtracker.company.CompanyService;
 import de.zbidi.jobtracker.jobapplication.JobApplicationService;
+import de.zbidi.jobtracker.posting.ImportService;
+import de.zbidi.jobtracker.posting.ImportStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -17,6 +19,7 @@ import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.assertj.MockMvcTester;
@@ -37,6 +40,9 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 @Import({SecurityConfig.class, GlobalExceptionHandler.class})
 class SecurityRulesTest {
 
+	private static final MockMultipartFile CSV = new MockMultipartFile("file", "postings.csv", "text/csv",
+			"title,company,city,url\nDev,ACME,Berlin,https://acme.example/1\n".getBytes());
+
 	@Autowired
 	MockMvcTester mvc;
 
@@ -48,6 +54,9 @@ class SecurityRulesTest {
 
 	@MockitoBean
 	AuthService authService;
+
+	@MockitoBean
+	ImportService importService;
 
 	// --- 401 ---
 
@@ -135,6 +144,50 @@ class SecurityRulesTest {
 	void deleteCompanyAsAdminReturns204() {
 		assertThat(mvc.delete().uri("/api/companies/1").with(TestJwt.admin(1L)).exchange())
 				.hasStatus(HttpStatus.NO_CONTENT);
+	}
+
+	@Test
+	void adminApiAsUserReturns403Problem() {
+		MvcTestResult result = mvc.get().uri("/api/admin/imports/1").with(TestJwt.user(7L)).exchange();
+
+		assertThat(result).hasStatus(HttpStatus.FORBIDDEN).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		verifyNoInteractions(importService);
+	}
+
+	@Test
+	void adminApiWithoutTokenReturns401() {
+		assertThat(mvc.get().uri("/api/admin/imports/1").exchange()).hasStatus(HttpStatus.UNAUTHORIZED);
+		verifyNoInteractions(importService);
+	}
+
+	@Test
+	void importUploadAsUserReturns403Problem() {
+		MvcTestResult result = mvc.post().uri("/api/admin/imports").multipart().file(CSV)
+				.with(TestJwt.user(7L)).exchange();
+
+		assertThat(result).hasStatus(HttpStatus.FORBIDDEN).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(result).bodyJson().extractingPath("$.title").isEqualTo("Forbidden");
+		verifyNoInteractions(importService);
+	}
+
+	@Test
+	void importUploadAsAdminReturns202() {
+		given(importService.start(any())).willReturn(
+				new ImportStatusResponse(9L, "STARTING", "UNKNOWN", null, null, 0, 0, 0, 0, List.of()));
+
+		MvcTestResult result = mvc.post().uri("/api/admin/imports").multipart().file(CSV)
+				.with(TestJwt.admin(1L)).exchange();
+
+		assertThat(result).hasStatus(HttpStatus.ACCEPTED);
+		assertThat(result).bodyJson().extractingPath("$.executionId").isEqualTo(9);
+	}
+
+	@Test
+	void adminApiAsAdminIsAllowed() {
+		given(importService.status(1L)).willReturn(
+				new ImportStatusResponse(1L, "COMPLETED", "COMPLETED", null, null, 0, 0, 0, 0, List.of()));
+
+		assertThat(mvc.get().uri("/api/admin/imports/1").with(TestJwt.admin(1L)).exchange()).hasStatus(HttpStatus.OK);
 	}
 
 	// --- stateless API ---

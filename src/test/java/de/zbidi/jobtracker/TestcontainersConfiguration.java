@@ -49,4 +49,10 @@ public class TestcontainersConfiguration {
 		return registry -> registry.add("spring.kafka.consumer.group-id", () -> group);
 	}
 
+	/** The daily reminder must not fire in the middle of a test run; tests call ReminderService directly. */
+	@Bean
+	DynamicPropertyRegistrar remindersSchedulerOff() {
+		return registry -> registry.add("jobtracker.reminder.cron", () -> "-");
+	}
+
 }

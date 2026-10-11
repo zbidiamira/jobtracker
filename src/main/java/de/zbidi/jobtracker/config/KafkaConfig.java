@@ -5,6 +5,8 @@ import java.util.Map;
 
 import de.zbidi.jobtracker.jobapplication.StatusChangedEvent;
 import de.zbidi.jobtracker.jobapplication.StatusEventPublisher;
+import de.zbidi.jobtracker.reminder.ReminderEvent;
+import de.zbidi.jobtracker.reminder.ReminderEventPublisher;
 import org.apache.kafka.clients.admin.NewTopic;
 import org.apache.kafka.common.TopicPartition;
 import org.apache.kafka.common.serialization.ByteArraySerializer;
@@ -22,7 +24,7 @@ import org.springframework.kafka.support.serializer.DelegatingByTypeSerializer;
 import org.springframework.kafka.support.serializer.JacksonJsonSerializer;
 
 /**
- * Topics, serialization and error handling for the status events. Everything else (bootstrap servers, consumer
+ * Topics, serialization and error handling for the status events and reminders. Everything else (bootstrap servers, consumer
  * deserializers, group id) is in application.yaml.
  */
 @Configuration(proxyBeanMethods = false)
@@ -43,6 +45,11 @@ public class KafkaConfig {
 		return TopicBuilder.name(DEAD_LETTER_TOPIC).partitions(PARTITIONS).replicas(1).build();
 	}
 
+	@Bean
+	NewTopic applicationRemindersTopic() {
+		return TopicBuilder.name(ReminderEventPublisher.TOPIC).partitions(PARTITIONS).replicas(1).build();
+	}
+
 	/**
 	 * The producer serializes by type: events as JSON (Jackson 3 based {@link JacksonJsonSerializer}, without Java type
 	 * headers so non-Java consumers can read them), and raw bytes unchanged. Raw bytes are what the dead-letter
@@ -52,6 +59,7 @@ public class KafkaConfig {
 	DefaultKafkaProducerFactoryCustomizer valueSerializerByType() {
 		Map<Class<?>, Serializer<?>> serializers = new LinkedHashMap<>();
 		serializers.put(StatusChangedEvent.class, new JacksonJsonSerializer<StatusChangedEvent>().noTypeInfo());
+		serializers.put(ReminderEvent.class, new JacksonJsonSerializer<ReminderEvent>().noTypeInfo());
 		serializers.put(byte[].class, new ByteArraySerializer());
 		return factory -> asObjectFactory(factory).setValueSerializer(new DelegatingByTypeSerializer(serializers));
 	}

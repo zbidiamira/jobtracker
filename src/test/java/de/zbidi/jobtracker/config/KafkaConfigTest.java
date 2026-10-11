@@ -26,4 +26,12 @@ class KafkaConfigTest {
 		assertThat(dlt.numPartitions()).isEqualTo(config.applicationStatusTopic().numPartitions());
 	}
 
+	@Test
+	void reminderTopicHasThreePartitions() {
+		NewTopic topic = config.applicationRemindersTopic();
+
+		assertThat(topic.name()).isEqualTo("application-reminders");
+		assertThat(topic.numPartitions()).isEqualTo(3);
+	}
+
 }

@@ -223,6 +223,19 @@ class ApiIntegrationTest {
 		assertThat(result).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
 	}
 
+	/** Swagger's placeholder: sort=["string"] is not even a property name. Was a 500. */
+	@Test
+	void malformedSortExpressionReturns400() {
+		MvcTestResult companies = mvc.get().uri("/api/companies").queryParam("sort", "[\"string\"]")
+				.header(HttpHeaders.AUTHORIZATION, bearer).exchange();
+		MvcTestResult applications = mvc.get().uri("/api/applications").queryParam("sort", "name;drop table")
+				.header(HttpHeaders.AUTHORIZATION, bearer).exchange();
+
+		assertThat(companies).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+		assertThat(companies).bodyJson().extractingPath("$.detail").asString().contains("sort");
+		assertThat(applications).hasStatus(HttpStatus.BAD_REQUEST).hasContentType(MediaType.APPLICATION_PROBLEM_JSON);
+	}
+
 	@Test
 	void openApiDocsListAllEndpoints() {
 		MvcTestResult result = mvc.get().uri("/v3/api-docs").exchange();
@@ -241,6 +254,9 @@ class ApiIntegrationTest {
 		// the plain list only pages
 		List<String> listParams = JsonPath.read(contentOf(result), "$.paths['/api/applications'].get.parameters[*].name");
 		assertThat(listParams).containsExactlyInAnyOrder("page", "size", "sort");
+		// companies too: separate fields instead of a JSON "pageable" box pre-filled with sort ["string"]
+		List<String> companyParams = JsonPath.read(contentOf(result), "$.paths['/api/companies'].get.parameters[*].name");
+		assertThat(companyParams).containsExactlyInAnyOrder("page", "size", "sort");
 	}
 
 	@Test

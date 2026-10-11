@@ -7,8 +7,12 @@ import de.zbidi.jobtracker.jobapplication.DuplicateApplicationException;
 import de.zbidi.jobtracker.jobapplication.InvalidStatusTransitionException;
 import de.zbidi.jobtracker.jobapplication.RecruiterConflictException;
 import de.zbidi.jobtracker.jobapplication.StaleVersionException;
+import de.zbidi.jobtracker.posting.ImportNotRestartableException;
 import de.zbidi.jobtracker.user.EmailAlreadyRegisteredException;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.InvalidDataAccessApiUsageException;
 import org.springframework.data.core.PropertyReferenceException;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -31,6 +35,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  */
 @RestControllerAdvice
 public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
+
+	private static final Logger log = LoggerFactory.getLogger(GlobalExceptionHandler.class);
 
 	public record FieldViolation(String field, String message) {
 	}
@@ -81,10 +87,30 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		return conflict("Company in use", ex.getMessage());
 	}
 
+	@ExceptionHandler(ImportNotRestartableException.class)
+	ProblemDetail handleImportNotRestartable(ImportNotRestartableException ex) {
+		return conflict("Import not restartable", ex.getMessage());
+	}
+
 	/** e.g. {@code ?sort=doesNotExist} */
 	@ExceptionHandler(PropertyReferenceException.class)
 	ProblemDetail handleUnknownProperty(PropertyReferenceException ex) {
 		return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST, ex.getMessage());
+	}
+
+	/**
+	 * A sort value that isn't even a property name, e.g. Swagger's placeholder {@code ?sort=["string"]}: Spring Data
+	 * rejects it before building the query ("Sort expression ... must only contain property references"). Any other
+	 * misuse of the data access API is a bug on our side and stays a 500.
+	 */
+	@ExceptionHandler(InvalidDataAccessApiUsageException.class)
+	ProblemDetail handleInvalidDataAccessApiUsage(InvalidDataAccessApiUsageException ex) {
+		if (ex.getMessage() != null && ex.getMessage().startsWith("Sort expression")) {
+			return ProblemDetail.forStatusAndDetail(HttpStatus.BAD_REQUEST,
+					"Invalid sort parameter: use a property name, e.g. ?sort=name or ?sort=name,desc");
+		}
+		log.error("Unexpected data access API usage", ex);
+		return ProblemDetail.forStatusAndDetail(HttpStatus.INTERNAL_SERVER_ERROR, "Unexpected server error");
 	}
 
 	@ExceptionHandler(InvalidStatusTransitionException.class)

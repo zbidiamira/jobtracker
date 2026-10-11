@@ -4,6 +4,7 @@ import java.net.URI;
 
 import de.zbidi.jobtracker.common.PageResponse;
 import jakarta.validation.Valid;
+import org.springdoc.core.annotations.ParameterObject;
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.web.PageableDefault;
 import org.springframework.http.HttpStatus;
@@ -42,7 +43,7 @@ public class CompanyController {
 	}
 
 	@GetMapping
-	public PageResponse<CompanyResponse> list(@PageableDefault(size = 20, sort = "name") Pageable pageable) {
+	public PageResponse<CompanyResponse> list(@ParameterObject @PageableDefault(size = 20, sort = "name") Pageable pageable) {
 		return companyService.list(pageable);
 	}
 
