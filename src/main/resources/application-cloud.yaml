@@ -1,0 +1,12 @@
+# Anthropic (SPRING_PROFILES_ACTIVE=cloud). The key comes ONLY from the environment variable ANTHROPIC_API_KEY;
+# never write it into this file or any other file in git. Without the variable the app doesn't start.
+spring:
+  ai:
+    model:
+      chat: anthropic
+    anthropic:
+      api-key: ${ANTHROPIC_API_KEY}
+      timeout: 30s
+      chat:
+        temperature: 0.0
+        max-tokens: 2000

@@ -24,6 +24,17 @@ spring:
     multipart:
       max-file-size: 5MB
       max-request-size: 5MB
+  ai:
+    model:
+      chat: none              # no AI by default; profiles "local" (Ollama) and "cloud" (Anthropic) switch it on
+    retry:
+      # Spring AI's default would be 10 attempts with up to 3 minutes between them; our requests time out after 30 s
+      max-attempts: 2
+      backoff:
+        initial-interval: 1s
+        multiplier: 2
+        max-interval: 5s
+      on-client-errors: false # 4xx (bad key, request too large) is never retried
   kafka:
     # explicit, because Docker Compose support is disabled (compose.yaml publishes Kafka on 9092)
     bootstrap-servers: ${KAFKA_BOOTSTRAP_SERVERS:localhost:9092}
@@ -60,3 +71,11 @@ jobtracker:
     # APPLIED applications unchanged for this long get one ReminderEvent; checked daily at 08:00 (Europe/Berlin)
     after: 14d
     cron: ${JOBTRACKER_REMINDER_CRON:0 0 8 * * *}
+  ai:
+    timeout: 30s              # hard limit per analysis, whatever the provider does
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,metrics   # /actuator/metrics needs a token; e.g. /actuator/metrics/jobtracker.ai.tokens

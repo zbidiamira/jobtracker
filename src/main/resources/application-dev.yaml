@@ -1,0 +1,6 @@
+# Development helpers (SPRING_PROFILES_ACTIVE=dev, or local,dev together with Ollama).
+jobtracker:
+  seed:
+    skills:
+      # gets the skills from seed/skills.csv at startup; register this account first, then restart
+      owner-email: zbidi.amira1994@gmail.com

@@ -2,12 +2,14 @@ package de.zbidi.jobtracker.config;
 
 import java.util.List;
 
+import de.zbidi.jobtracker.analysis.PostingAnalyzer;
 import de.zbidi.jobtracker.auth.AuthService;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
 import de.zbidi.jobtracker.common.PageResponse;
 import de.zbidi.jobtracker.company.CompanyService;
 import de.zbidi.jobtracker.jobapplication.JobApplicationService;
 import de.zbidi.jobtracker.posting.ImportService;
+import de.zbidi.jobtracker.skill.SkillService;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.webmvc.test.autoconfigure.WebMvcTest;
@@ -55,6 +57,12 @@ class ControllerSecurityTest {
 
 	@MockitoBean
 	ImportService importService;
+
+	@MockitoBean
+	SkillService skillService;
+
+	@MockitoBean
+	PostingAnalyzer postingAnalyzer;
 
 	// --- no token ---
 

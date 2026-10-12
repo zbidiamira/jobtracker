@@ -3,6 +3,7 @@ package de.zbidi.jobtracker.config;
 import java.util.List;
 
 import de.zbidi.jobtracker.TestJwt;
+import de.zbidi.jobtracker.analysis.PostingAnalyzer;
 import de.zbidi.jobtracker.auth.AuthResponse;
 import de.zbidi.jobtracker.auth.AuthService;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
@@ -11,6 +12,7 @@ import de.zbidi.jobtracker.company.CompanyResponse;
 import de.zbidi.jobtracker.company.CompanyService;
 import de.zbidi.jobtracker.jobapplication.JobApplicationService;
 import de.zbidi.jobtracker.posting.ImportService;
+import de.zbidi.jobtracker.skill.SkillService;
 import de.zbidi.jobtracker.posting.ImportStatusResponse;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -57,6 +59,12 @@ class SecurityRulesTest {
 
 	@MockitoBean
 	ImportService importService;
+
+	@MockitoBean
+	SkillService skillService;
+
+	@MockitoBean
+	PostingAnalyzer postingAnalyzer;
 
 	// --- 401 ---
 

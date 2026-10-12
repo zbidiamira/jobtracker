@@ -34,15 +34,15 @@ docker compose up -d
 - **Security**: Spring Security with OAuth2 Resource Server
 - **Messaging**: Apache Kafka
 - **Batch**: Spring Batch 6 with a JDBC job repository (`spring-boot-starter-batch-jdbc`); jobs don't run at startup
-- **AI**: Spring AI with Anthropic/OpenAI integration (dependencies currently commented out)
+- **AI**: Spring AI 2.0 (Ollama locally, Anthropic in the cloud) for the posting analyzer (Week 7)
 
 ### Database Schema
 Flyway scripts in order: V1 `company`, `job_application` · V2 `recruiter` + duplicate/recruiter unique indexes ·
 V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN) · V6 `job_application.owner_id`
 (NOT NULL) with the unique indexes recreated **per owner** · V7 `status_history.event_id` (unique) · V8 `job_posting`
 (unique `url`) · V9 `job_application.reminded_at` · V10 Spring Batch metadata tables (copy of Batch 6.0.5's
-`schema-postgresql.sql`; `spring.batch.jdbc.initialize-schema: never`). Companies, recruiters and job postings are
-shared between users.
+`schema-postgresql.sql`; `spring.batch.jdbc.initialize-schema: never`) · V11 `skill` (per user, unique
+`(user_id, lower(name))`). Companies, recruiters and job postings are shared between users.
 
 ### Security (Week 4)
 - Stateless JWT resource server (`config/SecurityConfig`, `config/JwtConfig`). The app signs its own RS256 tokens
@@ -50,7 +50,8 @@ shared between users.
   `jobtracker.jwt.public-key-location/private-key-location` (e.g. `file:/run/secrets/...`) or inline PEM
   `jobtracker.jwt.public-key/private-key` (env `JOBTRACKER_JWT_*`); if neither, a temporary key pair is generated at startup.
 - `roles` claim -> `ROLE_USER`/`ROLE_ADMIN` (`SecurityConfig.jwtAuthenticationConverter`); Spring Security 7 also adds `FACTOR_BEARER`.
-- Public: `/api/auth/register`, `/api/auth/login`, Swagger UI, `/v3/api-docs`, `/actuator/health`. `DELETE` is ADMIN only.
+- Public: `/api/auth/register`, `/api/auth/login`, Swagger UI, `/v3/api-docs`, `/actuator/health`. `DELETE` is ADMIN only,
+  except `DELETE /api/skills/{id}` (a user's own skills).
   Admins can't self-register; promote a user in the database.
 - Ownership: controllers pass `CurrentUser.id(jwt)` (the `sub` claim; non-numeric → 401) as `ownerId` to every service
   call; the search Specification always includes `ownedBy(ownerId)`; repository lookups are `...AndOwnerId`, so another
@@ -97,6 +98,31 @@ shared between users.
   `@SpringBatchTest` picks *any* test method returning `StepExecution`/`JobExecution` as its scope factory, so batch
   tests define `getStepExecution()`/`getJobExecution()`.
 
+### AI posting analyzer (Week 7, Spring AI 2.0.1)
+- Skills (`skill/`): `/api/skills` CRUD, owner-scoped like applications (another user's skill → 404, duplicate → 409).
+  Dev seed: profile `dev` (`SkillSeeder`) gives `jobtracker.seed.skills.owner-email` (application-dev.yaml) the
+  skills in `seed/skills.csv` at startup; the user must be registered first (then restart); idempotent, never
+  overwrites existing skills. Not active in tests, `local` alone or `cloud`.
+- `POST /api/postings/analyze {text}` (max 10 000 chars) → `PostingAnalysis` (title, mustHave, niceToHave,
+  matchedSkills, missingSkills, matchScore, summary). `analysis/PostingAnalyzer`: `ChatClient` with the fixed system
+  prompt `prompts/posting-analyzer-system.st` and the tool `SkillTools.getMySkills` registered as **defaults**
+  (`createChatClient`: `defaultSystem`/`defaultTools`); per call only the posting and `.toolContext(userId)`, `.responseEntity(PostingAnalysis.class)` (entity + token usage).
+- Model choice: `spring.ai.model.chat` = `none` (default: app runs, analyzer → 503) · profile `local` = Ollama
+  (`docker compose --profile local up -d`, once `docker exec jobtracker-ollama ollama pull qwen2.5:3b`) · profile
+  `cloud` = Anthropic, key **only** from env `ANTHROPIC_API_KEY` (never commit keys; `.env` is git-ignored).
+- Prompt injection: posting goes verbatim (no template params → `{...}` isn't rendered) between `<posting>` tags it
+  can't open/close itself; the answer is checked (score clamped to 0–100, matchedSkills ⊆ the user's skills).
+- Resilience: hard timeout `jobtracker.ai.timeout` (30s, virtual-thread future); `spring.ai.retry` max 2 attempts,
+  never on 4xx (Spring AI's default is 10 attempts / up to 3 min). Unavailable/timeout/not configured → 503
+  ProblemDetail, fixed detail "AI service currently unavailable" + `Retry-After: 30` (the reason is only logged);
+  4xx from the provider or unusable answer → 502.
+- Metrics (registered at startup, `/actuator/metrics` is exposed and needs a token): log `ai tokens prompt=…
+  completion=… total=…` (total as reported by the provider), counter `jobtracker.ai.tokens{type=prompt|completion}`,
+  timer `jobtracker.ai.duration{outcome=success|timeout|unavailable|rejected}`.
+- Spring AI 2.0 facts: tool calls are executed by the ChatClient's `ToolCallingAdvisor` (not inside the provider
+  model); `toolCallbacks(..)` is deprecated → `tools(..)`; the `ChatClient.Builder` bean needs a `ChatModel`, so
+  `PostingAnalyzer` checks `ObjectProvider<ChatModel>` first.
+
 ### Testing
 - Testcontainers for integration tests: `TestcontainersConfiguration` = shared static PostgreSQL + Kafka
   (`apache/kafka`, not `kafka-native`, which crashes here) and a Kafka consumer group per Spring context;
@@ -105,6 +131,9 @@ shared between users.
   Import fixtures: `src/test/resources/postings/` (`valid.csv` 120 rows, `invalid.csv` 3 broken lines,
   `duplicates.csv`); their urls are fixed (`https://fixtures.example/...`), so tests delete those rows first.
   Admin tokens in `@SpringBootTest`: register, `UPDATE app_user SET role = 'ADMIN'`, then `ApiAuth.login`
+- AI tests never call a model: `FakeChatModel` (mocked `ChatModel` whose `getOptions()` returns
+  `ToolCallingChatOptions`, else tools aren't attached) + the real `ChatClient`, so the tool round trip really runs;
+  `@SpringBootTest` uses `@MockitoBean ChatModel` (`spring.ai.model.chat=none` by default).
 - `TestJobtrackerApplication` runs the app with Testcontainers for local development
 - Test config in `TestcontainersConfiguration.java`
 - `@WebMvcTest`: `@Import({SecurityConfig.class, GlobalExceptionHandler.class})` and authenticate requests with

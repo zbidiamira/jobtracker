@@ -2,12 +2,15 @@ package de.zbidi.jobtracker.common;
 
 import java.util.List;
 
+import de.zbidi.jobtracker.analysis.AiRejectedException;
+import de.zbidi.jobtracker.analysis.AiUnavailableException;
 import de.zbidi.jobtracker.company.CompanyInUseException;
 import de.zbidi.jobtracker.jobapplication.DuplicateApplicationException;
 import de.zbidi.jobtracker.jobapplication.InvalidStatusTransitionException;
 import de.zbidi.jobtracker.jobapplication.RecruiterConflictException;
 import de.zbidi.jobtracker.jobapplication.StaleVersionException;
 import de.zbidi.jobtracker.posting.ImportNotRestartableException;
+import de.zbidi.jobtracker.skill.DuplicateSkillException;
 import de.zbidi.jobtracker.user.EmailAlreadyRegisteredException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -85,6 +88,31 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 	@ExceptionHandler(CompanyInUseException.class)
 	ProblemDetail handleCompanyInUse(CompanyInUseException ex) {
 		return conflict("Company in use", ex.getMessage());
+	}
+
+	/**
+	 * The AI model can't answer now (not configured, down, too slow): the client may try again later. The reason
+	 * (timeout, provider message) is only logged, never sent to the client.
+	 */
+	@ExceptionHandler(AiUnavailableException.class)
+	ResponseEntity<ProblemDetail> handleAiUnavailable(AiUnavailableException ex) {
+		log.warn("AI service unavailable: {}", ex.getMessage());
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.SERVICE_UNAVAILABLE,
+				"AI service currently unavailable");
+		return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "30").body(problem);
+	}
+
+	/** The provider refused the request or answered something unusable; repeating it won't help. */
+	@ExceptionHandler(AiRejectedException.class)
+	ProblemDetail handleAiRejected(AiRejectedException ex) {
+		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
+		problem.setTitle("AI request failed");
+		return problem;
+	}
+
+	@ExceptionHandler(DuplicateSkillException.class)
+	ProblemDetail handleDuplicateSkill(DuplicateSkillException ex) {
+		return conflict("Duplicate skill", ex.getMessage());
 	}
 
 	@ExceptionHandler(ImportNotRestartableException.class)

@@ -1,0 +1,24 @@
+# Amira's skills for the dev profile (SkillSeeder). Correct years/level freely; names must be unique.
+# level: BEGINNER | INTERMEDIATE | ADVANCED | EXPERT. Java = Java 8 and 21.
+name,years,level
+Java,8,EXPERT
+Spring Boot,6,EXPERT
+Spring Batch,3,ADVANCED
+Java EE,5,ADVANCED
+Quarkus,2,INTERMEDIATE
+Hibernate/JPA,6,ADVANCED
+REST,6,EXPERT
+Angular,3,INTERMEDIATE
+React,2,INTERMEDIATE
+TypeScript,3,INTERMEDIATE
+PostgreSQL,5,ADVANCED
+Oracle,4,ADVANCED
+Flyway,3,ADVANCED
+Docker,4,ADVANCED
+OpenShift,2,INTERMEDIATE
+Jenkins,3,INTERMEDIATE
+JUnit,6,EXPERT
+Mockito,5,ADVANCED
+Testcontainers,2,ADVANCED
+Kafka,1,BEGINNER
+Claude Code,1,INTERMEDIATE

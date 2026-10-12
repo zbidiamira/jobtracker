@@ -23,7 +23,7 @@ import org.springframework.web.servlet.HandlerExceptionResolver;
  * Stateless JWT resource server.
  * <ul>
  *     <li>public: /api/auth/**, Swagger UI, OpenAPI docs, /actuator/health</li>
- *     <li>/api/admin/** (e.g. imports) and DELETE: ADMIN only</li>
+ *     <li>/api/admin/** (e.g. imports) and DELETE: ADMIN only, except DELETE of the caller's own skills</li>
  *     <li>everything else: any authenticated user</li>
  * </ul>
  * 401 and 403 are answered with ProblemDetail by {@code GlobalExceptionHandler}, like every other error.
@@ -42,6 +42,8 @@ public class SecurityConfig {
 						.requestMatchers("/api/auth/**", "/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html",
 								"/actuator/health", "/actuator/health/**", "/error").permitAll()
 						.requestMatchers("/api/admin/**").hasRole("ADMIN")
+						// own skills: any user may delete them (ownership is checked in SkillService)
+						.requestMatchers(HttpMethod.DELETE, "/api/skills/**").authenticated()
 						.requestMatchers(HttpMethod.DELETE, "/api/**").hasRole("ADMIN")
 						.anyRequest().authenticated())
 				.oauth2ResourceServer(resourceServer -> resourceServer

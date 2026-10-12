@@ -34,6 +34,17 @@ services:
     volumes:
       - jobtracker-kafka:/var/lib/kafka/data
 
+  # local LLM for the posting analyzer; only with: docker compose --profile local up -d
+  ollama:
+    image: 'ollama/ollama:latest'
+    container_name: jobtracker-ollama
+    profiles: ['local']
+    ports:
+      - '11434:11434'
+    volumes:
+      - jobtracker-ollama:/root/.ollama   # downloaded models survive restarts
+
 volumes:
   jobtracker-data:
   jobtracker-kafka:
+  jobtracker-ollama:

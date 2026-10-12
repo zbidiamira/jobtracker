@@ -1,0 +1,12 @@
+# Local development with Ollama (SPRING_PROFILES_ACTIVE=local).
+# Start it with:  docker compose --profile local up -d
+# Once, download the model (~2 GB):  docker exec jobtracker-ollama ollama pull qwen2.5:3b
+spring:
+  ai:
+    model:
+      chat: ollama
+    ollama:
+      base-url: http://localhost:11434
+      chat:
+        model: qwen2.5:3b     # small enough for Docker Desktop's memory; supports tool calling and JSON
+        temperature: 0.0      # same posting, same analysis as far as possible
