@@ -106,6 +106,11 @@ public class PostingAnalyzer {
 		return builder.defaultSystem(SYSTEM_PROMPT).defaultTools(skillTools).build();
 	}
 
+	/** False without a configured chat model ({@code spring.ai.model.chat=none}). */
+	public boolean isAvailable() {
+		return chatClient != null;
+	}
+
 	public PostingAnalysis analyze(long ownerId, String postingText) {
 		if (chatClient == null) {
 			throw new AiUnavailableException("AI is not configured (set a profile: local or cloud)");

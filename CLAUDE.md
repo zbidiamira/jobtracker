@@ -42,7 +42,8 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
 (NOT NULL) with the unique indexes recreated **per owner** · V7 `status_history.event_id` (unique) · V8 `job_posting`
 (unique `url`) · V9 `job_application.reminded_at` · V10 Spring Batch metadata tables (copy of Batch 6.0.5's
 `schema-postgresql.sql`; `spring.batch.jdbc.initialize-schema: never`) · V11 `skill` (per user, unique
-`(user_id, lower(name))`). Companies, recruiters and job postings are shared between users.
+`(user_id, lower(name))`) · V12 `job_posting.description/external_id/published_at/remote` · V13 `posting_match`
+(one AI result per posting and user, status MATCHED/FAILED, analysis as JSONB). Companies, recruiters and job postings are shared between users.
 
 ### Security (Week 4)
 - Stateless JWT resource server (`config/SecurityConfig`, `config/JwtConfig`). The app signs its own RS256 tokens
@@ -75,7 +76,8 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
   `org.springframework.batch.infrastructure.item.*`; steps via `StepBuilder.chunk(n)` → `ChunkOrientedStepBuilder`
   (not the legacy `chunk(n, tm)`); launch via `JobOperator` (not `JobLauncher`). No `@EnableBatchProcessing`
   (it would switch off Boot's auto-configuration and default to an in-memory repository).
-- `postingImportJob` (`posting/PostingImportJobConfig`): CSV `title,company,city,url` (header) → `PostingItemProcessor`
+- `postingImportJob` (`posting/PostingImportJobConfig`): CSV `title,company,city,url,description` (header; a quoted
+  description may span lines: `DefaultRecordSeparatorPolicy`; description required, max 10 000) → `PostingItemProcessor`
   (trim/validate → `ValidationException` = skip; known or repeated url → `null` = filter) → `JdbcBatchItemWriter`
   (`ON CONFLICT (url) DO NOTHING`). Chunk 50, skip `FlatFileParseException`/`ValidationException`, limit 10
   (11th fails the job), `PostingSkipLogger` logs skipped lines. Identifying params: `input.file` + `run.date`.
@@ -122,6 +124,17 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
 - Spring AI 2.0 facts: tool calls are executed by the ChatClient's `ToolCallingAdvisor` (not inside the provider
   model); `toolCallbacks(..)` is deprecated → `tools(..)`; the `ChatClient.Builder` bean needs a `ChatModel`, so
   `PostingAnalyzer` checks `ObjectProvider<ChatModel>` first.
+
+### Automatic matching (Week 8)
+- `postingMatchJob` (`matching/PostingMatchJobConfig`): every posting with a description × every user with ≥ 1 skill
+  without a `posting_match` row (keyset-paged subquery, newest postings first, at most
+  `jobtracker.matching.max-per-run`, default 50) → `PostingAnalyzer` as that user → MATCHED row with score + analysis
+  JSON. Chunk size 1 (each AI result committed at once). `AiRejectedException` → skipped, stored as FAILED (never
+  retried); `AiUnavailableException` → the run fails, the next run continues (no restart state, `saveState(false)`).
+- Starts: `MatchingService.start()` (503 without a model, 409 while a run is going) from `POST /api/admin/matching/run`
+  (status: `GET /api/admin/matching/{id}`) and after every import (`PostingImportFinishedListener` →
+  `PostingsImportedEvent` → `MatchingService.onPostingsImported`, which only logs if it can't start).
+- `GET /api/matches?minScore=&page=&size=` → the caller's MATCHED results, best first (`MatchQueryService`, JDBC).
 
 ### Testing
 - Testcontainers for integration tests: `TestcontainersConfiguration` = shared static PostgreSQL + Kafka

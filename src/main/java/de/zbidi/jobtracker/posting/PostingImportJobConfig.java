@@ -22,6 +22,7 @@ import org.springframework.batch.infrastructure.item.database.builder.JdbcBatchI
 import org.springframework.batch.infrastructure.item.file.FlatFileItemReader;
 import org.springframework.batch.infrastructure.item.file.FlatFileParseException;
 import org.springframework.batch.infrastructure.item.file.builder.FlatFileItemReaderBuilder;
+import org.springframework.batch.infrastructure.item.file.separator.DefaultRecordSeparatorPolicy;
 import org.springframework.batch.infrastructure.item.validator.ValidationException;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -31,7 +32,8 @@ import org.springframework.jdbc.core.namedparam.MapSqlParameterSource;
 import org.springframework.transaction.PlatformTransactionManager;
 
 /**
- * postingImportJob: CSV ({@code title,company,city,url} with header) → {@link PostingItemProcessor} → job_posting.
+ * postingImportJob: CSV ({@code title,company,city,url,description} with header; a quoted description may span
+ * several lines) → {@link PostingItemProcessor} → job_posting.
  * <ul>
  *     <li>chunks of 50, each in its own transaction</li>
  *     <li>unparsable lines and invalid postings are skipped and logged, at most 10; the 11th fails the job</li>
@@ -59,9 +61,11 @@ public class PostingImportJobConfig {
 	}
 
 	@Bean
-	Job postingImportJob(JobRepository jobRepository, Step postingImportStep) {
+	Job postingImportJob(JobRepository jobRepository, Step postingImportStep,
+			PostingImportFinishedListener finishedListener) {
 		return new JobBuilder(JOB_NAME, jobRepository)
 				.validator(new DefaultJobParametersValidator(new String[] { INPUT_FILE, RUN_DATE, SOURCE }, new String[0]))
+				.listener(finishedListener)
 				.start(postingImportStep)
 				.build();
 	}
@@ -91,8 +95,10 @@ public class PostingImportJobConfig {
 				.resource(new FileSystemResource(inputFile))
 				.encoding(StandardCharsets.UTF_8.name())
 				.linesToSkip(1)
+				// a quoted field may contain line breaks: the record continues until the quote is closed
+				.recordSeparatorPolicy(new DefaultRecordSeparatorPolicy())
 				.delimited()
-				.names("title", "company", "city", "url")
+				.names("title", "company", "city", "url", "description")
 				.targetType(PostingCsvLine.class)
 				.build();
 	}
@@ -110,8 +116,8 @@ public class PostingImportJobConfig {
 		return new JdbcBatchItemWriterBuilder<JobPosting>()
 				.dataSource(dataSource)
 				.sql("""
-						INSERT INTO job_posting (title, company_name, city, url, source, imported_at)
-						VALUES (:title, :companyName, :city, :url, :source, :importedAt)
+						INSERT INTO job_posting (title, company_name, city, url, description, source, imported_at)
+						VALUES (:title, :companyName, :city, :url, :description, :source, :importedAt)
 						ON CONFLICT (url) DO NOTHING
 						""")
 				.itemSqlParameterSourceProvider(posting -> new MapSqlParameterSource()
@@ -119,6 +125,7 @@ public class PostingImportJobConfig {
 						.addValue("companyName", posting.companyName())
 						.addValue("city", posting.city())
 						.addValue("url", posting.url())
+						.addValue("description", posting.description())
 						.addValue("source", posting.source())
 						.addValue("importedAt", Timestamp.from(posting.importedAt())))
 				.assertUpdates(false) // a conflict inserts 0 rows, that's fine

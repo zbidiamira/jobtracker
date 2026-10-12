@@ -141,14 +141,14 @@ class PostingImportRestartTest {
 	private StepExecution storedStep(JobExecution execution) {
 		assertThat(execution.getStepExecutions()).hasSize(1);
 		StepExecution step = execution.getStepExecutions().iterator().next();
-		return jobRepository.getStepExecution(execution.getId(), step.getId());
+		return jobRepository.getStepExecution(step.getId());
 	}
 
 	private Path csv() throws Exception {
 		List<String> lines = new ArrayList<>();
-		lines.add("title,company,city,url");
+		lines.add("title,company,city,url,description");
 		for (int i = 1; i <= LINES; i++) {
-			lines.add("Developer " + i + ",Company " + i + ",Berlin," + urlPrefix + i);
+			lines.add("Developer " + i + ",Company " + i + ",Berlin," + urlPrefix + i + ",Build Java services " + i);
 		}
 		return Files.write(dir.resolve("restart.csv"), lines);
 	}

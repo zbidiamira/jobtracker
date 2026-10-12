@@ -29,7 +29,7 @@ public class ImportController {
 		this.importService = importService;
 	}
 
-	/** CSV with header {@code title,company,city,url}, as multipart part {@code file}. */
+	/** CSV with header {@code title,company,city,url,description}, as multipart part {@code file}. */
 	@PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
 	public ResponseEntity<ImportStatusResponse> start(@RequestParam("file") MultipartFile file) {
 		if (file.isEmpty()) {

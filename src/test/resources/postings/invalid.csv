@@ -1,11 +1,11 @@
-title,company,city,url
-Java Developer,ACME,Berlin,https://fixtures.example/invalid/1
-Kotlin Developer,Initech,Hamburg,https://fixtures.example/invalid/2
+title,company,city,url,description
+Java Developer,ACME,Berlin,https://fixtures.example/invalid/1,Java and Spring Boot backend
+Kotlin Developer,Initech,Hamburg,https://fixtures.example/invalid/2,Android apps with Kotlin
 only,three,columns
-Backend Engineer,Globex,Munich,https://fixtures.example/invalid/3
-Frontend Engineer,Umbrella,Cologne,https://fixtures.example/invalid/4
-too,many,columns,here,really
-DevOps Engineer,Hooli,Frankfurt,https://fixtures.example/invalid/5
-Dev,ACME,Berlin,not-a-url
-Data Engineer,Stark,Berlin,https://fixtures.example/invalid/6
-QA Engineer,Wayne,Hamburg,https://fixtures.example/invalid/7
+Backend Engineer,Globex,Munich,https://fixtures.example/invalid/3,"REST APIs, PostgreSQL"
+Frontend Engineer,Umbrella,Cologne,https://fixtures.example/invalid/4,Angular and TypeScript
+too,many,columns,here,really,again
+DevOps Engineer,Hooli,Frankfurt,https://fixtures.example/invalid/5,Docker and OpenShift
+Dev,ACME,Berlin,not-a-url,A job with an invalid link
+Data Engineer,Stark,Berlin,https://fixtures.example/invalid/6,Spark and Kafka
+QA Engineer,Wayne,Hamburg,https://fixtures.example/invalid/7,JUnit and Testcontainers

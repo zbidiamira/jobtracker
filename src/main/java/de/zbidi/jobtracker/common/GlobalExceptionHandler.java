@@ -9,6 +9,7 @@ import de.zbidi.jobtracker.jobapplication.DuplicateApplicationException;
 import de.zbidi.jobtracker.jobapplication.InvalidStatusTransitionException;
 import de.zbidi.jobtracker.jobapplication.RecruiterConflictException;
 import de.zbidi.jobtracker.jobapplication.StaleVersionException;
+import de.zbidi.jobtracker.matching.MatchingAlreadyRunningException;
 import de.zbidi.jobtracker.posting.ImportNotRestartableException;
 import de.zbidi.jobtracker.skill.DuplicateSkillException;
 import de.zbidi.jobtracker.user.EmailAlreadyRegisteredException;
@@ -108,6 +109,11 @@ public class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 		ProblemDetail problem = ProblemDetail.forStatusAndDetail(HttpStatus.BAD_GATEWAY, ex.getMessage());
 		problem.setTitle("AI request failed");
 		return problem;
+	}
+
+	@ExceptionHandler(MatchingAlreadyRunningException.class)
+	ProblemDetail handleMatchingRunning(MatchingAlreadyRunningException ex) {
+		return conflict("Matching already running", ex.getMessage());
 	}
 
 	@ExceptionHandler(DuplicateSkillException.class)

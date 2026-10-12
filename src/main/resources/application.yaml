@@ -73,6 +73,9 @@ jobtracker:
     cron: ${JOBTRACKER_REMINDER_CRON:0 0 8 * * *}
   ai:
     timeout: 30s              # hard limit per analysis, whatever the provider does
+  matching:
+    # postingMatchJob: at most this many AI analyses per run (each takes 10-30 s with the local model)
+    max-per-run: 50
 
 management:
   endpoints:

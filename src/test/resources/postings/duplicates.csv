@@ -1,7 +1,7 @@
-title,company,city,url
-Java Developer,ACME,Berlin,https://fixtures.example/duplicates/a
-Kotlin Developer,Initech,Hamburg,https://fixtures.example/duplicates/b
-Java Developer (repost),ACME,Berlin,https://fixtures.example/duplicates/a
-Backend Engineer,Globex,Munich,https://fixtures.example/duplicates/c
-Kotlin Developer (repost),Initech,Hamburg,https://fixtures.example/duplicates/b
-Already Imported,Hooli,Frankfurt,https://fixtures.example/duplicates/known
+title,company,city,url,description
+Java Developer,ACME,Berlin,https://fixtures.example/duplicates/a,Java and Spring Boot
+Kotlin Developer,Initech,Hamburg,https://fixtures.example/duplicates/b,Kotlin and Android
+Java Developer (repost),ACME,Berlin,https://fixtures.example/duplicates/a,Java and Spring Boot
+Backend Engineer,Globex,Munich,https://fixtures.example/duplicates/c,REST and PostgreSQL
+Kotlin Developer (repost),Initech,Hamburg,https://fixtures.example/duplicates/b,Kotlin and Android
+Already Imported,Hooli,Frankfurt,https://fixtures.example/duplicates/known,Already in the database

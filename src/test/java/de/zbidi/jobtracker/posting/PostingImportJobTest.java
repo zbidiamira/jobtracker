@@ -47,7 +47,7 @@ import static org.awaitility.Awaitility.await;
 @Import(TestcontainersConfiguration.class)
 class PostingImportJobTest {
 
-	private static final String HEADER = "title,company,city,url";
+	private static final String HEADER = "title,company,city,url,description";
 	private static final LocalDate RUN_DATE = LocalDate.of(2026, 10, 11);
 	private static final String FIXTURE_URLS = "https://fixtures.example/";
 
@@ -105,9 +105,29 @@ class PostingImportJobTest {
 
 	@Test
 	void stepScopedProcessorGetsItsSourceFromTheJobParameters() {
-		JobPosting posting = postingProcessor.process(new PostingCsvLine("Dev", "ACME", "Berlin", urlPrefix + "s"));
+		JobPosting posting = postingProcessor.process(new PostingCsvLine("Dev", "ACME", "Berlin", urlPrefix + "s", "We need a developer."));
 
 		assertThat(posting.source()).isEqualTo("csv:test.csv");
+	}
+
+	/** A real job text spans several lines and contains commas and quotes: quoted CSV fields allow all of that. */
+	@Test
+	void quotedDescriptionMaySpanSeveralLines() throws Exception {
+		Path file = Files.writeString(dir.resolve("multiline.csv"), """
+				title,company,city,url,description
+				Java Developer,ACME,Berlin,%1$s1,"Your tasks:
+				- build REST APIs, with Spring Boot
+				- say ""hello"" to Kafka"
+				Kotlin Developer,Initech,Hamburg,%1$s2,One line
+				""".formatted(urlPrefix));
+
+		JobExecution execution = run(file);
+
+		assertThat(execution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+		assertThat(step(execution).getWriteCount()).isEqualTo(2);
+		assertThat(jdbc.queryForObject("SELECT description FROM job_posting WHERE url = ?", String.class,
+				urlPrefix + "1"))
+				.isEqualTo("Your tasks:\n- build REST APIs, with Spring Boot\n- say \"hello\" to Kafka");
 	}
 
 	// --- fixtures in src/test/resources/postings ---
@@ -155,15 +175,16 @@ class PostingImportJobTest {
 
 	@Test
 	void storesTrimmedValuesWithSource() throws Exception {
-		Path file = csv(List.of(" Java Developer , ACME ,  , " + urlPrefix + "1 "));
+		Path file = csv(List.of(" Java Developer , ACME ,  , " + urlPrefix + "1 , Build APIs. "));
 
 		run(file);
 
-		assertThat(jdbc.queryForMap("SELECT title, company_name, city, source FROM job_posting WHERE url = ?",
+		assertThat(jdbc.queryForMap("SELECT title, company_name, city, description, source FROM job_posting WHERE url = ?",
 				urlPrefix + "1"))
 				.containsEntry("title", "Java Developer")
 				.containsEntry("company_name", "ACME")
 				.containsEntry("city", null)
+				.containsEntry("description", "Build APIs.")
 				.containsEntry("source", "csv:test.csv");
 	}
 
@@ -244,7 +265,7 @@ class PostingImportJobTest {
 	private List<String> validLines(int from, int to) {
 		List<String> lines = new ArrayList<>();
 		for (int i = from; i < to; i++) {
-			lines.add("Developer " + i + ",Company " + i + ",Berlin," + urlPrefix + i);
+			lines.add("Developer " + i + ",Company " + i + ",Berlin," + urlPrefix + i + ",Build Java services " + i);
 		}
 		return lines;
 	}

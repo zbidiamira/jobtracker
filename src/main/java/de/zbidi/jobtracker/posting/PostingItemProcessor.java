@@ -25,6 +25,8 @@ public class PostingItemProcessor implements ItemProcessor<PostingCsvLine, JobPo
 	static final int MAX_COMPANY = 200;
 	static final int MAX_CITY = 100;
 	static final int MAX_URL = 500;
+	/** Same limit as a posting pasted into /api/postings/analyze: the AI analyzes this text. */
+	static final int MAX_DESCRIPTION = 10_000;
 
 	private final JobPostingRepository repository;
 	private final Clock clock;
@@ -44,11 +46,12 @@ public class PostingItemProcessor implements ItemProcessor<PostingCsvLine, JobPo
 		String city = optional("city", line.city(), MAX_CITY);
 		String url = required("url", line.url(), MAX_URL);
 		requireHttpUrl(url);
+		String description = required("description", line.description(), MAX_DESCRIPTION);
 
 		if (!seenUrls.add(url) || repository.existsByUrl(url)) {
 			return null;
 		}
-		return new JobPosting(title, company, city, url, source, clock.instant());
+		return new JobPosting(title, company, city, url, description, source, clock.instant());
 	}
 
 	private static String required(String field, @Nullable String value, int maxLength) {

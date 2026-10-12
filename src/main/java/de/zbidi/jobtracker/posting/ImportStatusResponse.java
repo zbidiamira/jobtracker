@@ -8,7 +8,7 @@ import org.springframework.batch.core.job.JobExecution;
 import org.springframework.batch.core.step.StepExecution;
 
 /**
- * State of one import run (a JobExecution of postingImportJob). Counts are summed over its steps.
+ * State of one batch run (import or matching). Counts are summed over its steps.
  *
  * @param skipCount   lines skipped as unreadable or invalid (at most 10, or the run fails)
  * @param filterCount postings dropped as duplicates (not an error)
@@ -26,7 +26,7 @@ public record ImportStatusResponse(
 		long skipCount,
 		List<String> failures) {
 
-	static ImportStatusResponse from(JobExecution execution) {
+	public static ImportStatusResponse from(JobExecution execution) {
 		var steps = execution.getStepExecutions();
 		return new ImportStatusResponse(
 				execution.getId(),

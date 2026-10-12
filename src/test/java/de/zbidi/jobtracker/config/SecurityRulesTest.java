@@ -4,6 +4,8 @@ import java.util.List;
 
 import de.zbidi.jobtracker.TestJwt;
 import de.zbidi.jobtracker.analysis.PostingAnalyzer;
+import de.zbidi.jobtracker.matching.MatchQueryService;
+import de.zbidi.jobtracker.matching.MatchingService;
 import de.zbidi.jobtracker.auth.AuthResponse;
 import de.zbidi.jobtracker.auth.AuthService;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
@@ -65,6 +67,12 @@ class SecurityRulesTest {
 
 	@MockitoBean
 	PostingAnalyzer postingAnalyzer;
+
+	@MockitoBean
+	MatchQueryService matchQueryService;
+
+	@MockitoBean
+	MatchingService matchingService;
 
 	// --- 401 ---
 

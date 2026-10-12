@@ -23,7 +23,7 @@ class PostingSkipLoggerTest {
 
 	@Test
 	void invalidPostingIsLoggedWithUrlAndReason(CapturedOutput output) {
-		logger.onSkipInProcess(new PostingCsvLine("", "ACME", "Berlin", "https://acme.example/1"),
+		logger.onSkipInProcess(new PostingCsvLine("", "ACME", "Berlin", "https://acme.example/1", "We need a developer."),
 				new ValidationException("title is required"));
 
 		assertThat(output).contains("WARN").contains("https://acme.example/1").contains("title is required");

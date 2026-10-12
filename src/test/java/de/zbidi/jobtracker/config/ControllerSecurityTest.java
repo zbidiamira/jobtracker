@@ -3,6 +3,8 @@ package de.zbidi.jobtracker.config;
 import java.util.List;
 
 import de.zbidi.jobtracker.analysis.PostingAnalyzer;
+import de.zbidi.jobtracker.matching.MatchQueryService;
+import de.zbidi.jobtracker.matching.MatchingService;
 import de.zbidi.jobtracker.auth.AuthService;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
 import de.zbidi.jobtracker.common.PageResponse;
@@ -63,6 +65,12 @@ class ControllerSecurityTest {
 
 	@MockitoBean
 	PostingAnalyzer postingAnalyzer;
+
+	@MockitoBean
+	MatchQueryService matchQueryService;
+
+	@MockitoBean
+	MatchingService matchingService;
 
 	// --- no token ---
 

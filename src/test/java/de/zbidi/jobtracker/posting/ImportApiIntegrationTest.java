@@ -60,9 +60,9 @@ class ImportApiIntegrationTest {
 	@Test
 	void uploadedFileIsSavedAndImportedInTheBackground() throws Exception {
 		String csv = """
-				title,company,city,url
-				Java Developer,ACME,Berlin,%1$s1
-				Kotlin Developer,Initech,Hamburg,%1$s2
+				title,company,city,url,description
+				Java Developer,ACME,Berlin,%1$s1,"Spring Boot services, PostgreSQL"
+				Kotlin Developer,Initech,Hamburg,%1$s2,Android apps
 				broken line
 				""".formatted(urlPrefix);
 		MvcTestResult started = upload(csv);
@@ -94,7 +94,7 @@ class ImportApiIntegrationTest {
 
 		MvcTestResult result = mvc.post().uri("/api/admin/imports")
 				.multipart().file(new MockMultipartFile("file", "postings.csv", "text/csv",
-						"title,company,city,url\nDev,ACME,Berlin,%s1\n".formatted(urlPrefix).getBytes()))
+						"title,company,city,url,description\nDev,ACME,Berlin,%s1,Java backend\n".formatted(urlPrefix).getBytes()))
 				.header(HttpHeaders.AUTHORIZATION, user)
 				.exchange();
 
@@ -105,7 +105,8 @@ class ImportApiIntegrationTest {
 
 	@Test
 	void completedImportCannotBeRestarted() {
-		MvcTestResult started = upload("title,company,city,url\nDev,ACME,Berlin,%s1\n".formatted(urlPrefix));
+		MvcTestResult started = upload("title,company,city,url,description\nDev,ACME,Berlin,%s1,Java backend\n"
+				.formatted(urlPrefix));
 		String location = started.getResponse().getHeader(HttpHeaders.LOCATION);
 		await().atMost(Duration.ofSeconds(30)).until(() -> ApiAuth.content(get(location)),
 				json -> "COMPLETED".equals(JsonPath.read(json, "$.status")));

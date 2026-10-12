@@ -33,7 +33,8 @@ class JobPostingTableTest {
 				WHERE table_schema = 'public' AND table_name = 'job_posting'
 				ORDER BY ordinal_position
 				""", String.class))
-				.containsExactly("id", "title", "company_name", "city", "url", "source", "imported_at");
+				.containsExactly("id", "title", "company_name", "city", "url", "source", "imported_at",
+						"description", "external_id", "published_at", "remote");
 	}
 
 	@Test
