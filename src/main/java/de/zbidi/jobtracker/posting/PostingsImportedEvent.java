@@ -1,9 +1,10 @@
 package de.zbidi.jobtracker.posting;
 
 /**
- * An import finished and wrote new postings (published by {@link PostingImportFinishedListener}).
+ * New postings arrived: from a CSV import ({@link PostingImportFinishedListener}) or the daily fetch.
  *
+ * @param origin  for the log, e.g. {@code import 12} or {@code fetch}
  * @param written number of new postings
  */
-public record PostingsImportedEvent(long jobExecutionId, long written) {
+public record PostingsImportedEvent(String origin, long written) {
 }

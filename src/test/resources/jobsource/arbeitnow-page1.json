@@ -1,0 +1,61 @@
+{
+ "data": [
+  {
+   "slug": "java-backend-berlin-1",
+   "company_name": "ACME GmbH",
+   "title": "Java Backend Developer (m/w/d)",
+   "description": "<p><strong>Your tasks</strong></p><ul><li>Build REST APIs with Spring Boot</li><li>Run PostgreSQL &amp; Kafka</li></ul>",
+   "remote": false,
+   "url": "https://www.arbeitnow.com/jobs/companies/x/java-backend-berlin-1",
+   "tags": [
+    "Software Development"
+   ],
+   "job_types": [
+    "full time"
+   ],
+   "location": "Berlin",
+   "created_at": 1791500000
+  },
+  {
+   "slug": "marketing-manager-2",
+   "company_name": "Globex",
+   "title": "Marketing Manager",
+   "description": "<p>Plan campaigns and social media.</p>",
+   "remote": false,
+   "url": "https://www.arbeitnow.com/jobs/companies/x/marketing-manager-2",
+   "tags": [
+    "Marketing"
+   ],
+   "job_types": [
+    "full time"
+   ],
+   "location": "Hamburg",
+   "created_at": 1791400000
+  },
+  {
+   "slug": "kotlin-remote-3",
+   "company_name": "Initech",
+   "title": "Kotlin Developer",
+   "description": "<p>Android apps.</p>",
+   "remote": true,
+   "url": "https://www.arbeitnow.com/jobs/companies/x/kotlin-remote-3",
+   "tags": [
+    "Java",
+    "Kotlin"
+   ],
+   "job_types": [
+    "full time"
+   ],
+   "location": "Remote",
+   "created_at": 1791300000
+  }
+ ],
+ "links": {
+  "next": "https://www.arbeitnow.com/api/job-board-api?page=2"
+ },
+ "meta": {
+  "current_page": 1,
+  "per_page": 3,
+  "terms": "This is a free public API for jobs, please do not abuse."
+ }
+}

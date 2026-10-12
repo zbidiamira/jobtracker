@@ -4,6 +4,7 @@ import java.util.List;
 
 import de.zbidi.jobtracker.analysis.PostingAnalyzer;
 import de.zbidi.jobtracker.matching.MatchQueryService;
+import de.zbidi.jobtracker.jobsource.JobFetchService;
 import de.zbidi.jobtracker.matching.MatchingService;
 import de.zbidi.jobtracker.auth.AuthService;
 import de.zbidi.jobtracker.common.GlobalExceptionHandler;
@@ -71,6 +72,9 @@ class ControllerSecurityTest {
 
 	@MockitoBean
 	MatchingService matchingService;
+
+	@MockitoBean
+	JobFetchService jobFetchService;
 
 	// --- no token ---
 

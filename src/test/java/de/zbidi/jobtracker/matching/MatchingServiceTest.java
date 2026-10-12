@@ -77,7 +77,7 @@ class MatchingServiceTest {
 	void importedPostingsStartARun() throws Exception {
 		given(jobOperator.start(any(Job.class), any())).willReturn(MetaDataInstanceFactory.createJobExecution());
 
-		service.onPostingsImported(new PostingsImportedEvent(5L, 12));
+		service.onPostingsImported(new PostingsImportedEvent("import 5", 12));
 
 		verify(jobOperator).start(job, PostingMatchJobConfig.parameters(NOW));
 	}
@@ -87,7 +87,7 @@ class MatchingServiceTest {
 	void importTriggerOnlyLogsWhenMatchingCantStart(CapturedOutput output) {
 		given(analyzer.isAvailable()).willReturn(false);
 
-		assertThatNoException().isThrownBy(() -> service.onPostingsImported(new PostingsImportedEvent(5L, 12)));
+		assertThatNoException().isThrownBy(() -> service.onPostingsImported(new PostingsImportedEvent("import 5", 12)));
 		assertThat(output).contains("Matching not started");
 	}
 

@@ -1,0 +1,45 @@
+{
+ "ergebnisliste": [
+  {
+   "stellenangebotsart": "ARBEIT",
+   "stellenangebotsTitel": "Java-Entwickler (m/w/d)",
+   "stellenlokationen": [
+    {
+     "adresse": {
+      "plz": "10115",
+      "ort": "Berlin",
+      "land": "DEUTSCHLAND"
+     }
+    }
+   ],
+   "datumErsteVeroeffentlichung": "2026-10-11",
+   "aenderungsdatum": "2026-10-11T08:00:00.000",
+   "hauptberuf": "Softwareentwickler/in",
+   "firma": "Beispiel AG",
+   "referenznummer": "10001-1000000001-S",
+   "entfernung": 3
+  },
+  {
+   "stellenangebotsart": "ARBEIT",
+   "stellenangebotsTitel": "Java Fullstack Entwickler",
+   "stellenlokationen": [
+    {
+     "adresse": {
+      "plz": "10115",
+      "ort": "Potsdam",
+      "land": "DEUTSCHLAND"
+     }
+    }
+   ],
+   "datumErsteVeroeffentlichung": "2026-10-11",
+   "aenderungsdatum": "2026-10-11T08:00:00.000",
+   "hauptberuf": "Softwareentwickler/in",
+   "firma": "Muster GmbH",
+   "referenznummer": "10001-1000000002-S",
+   "entfernung": 3
+  }
+ ],
+ "maxErgebnisse": 2,
+ "page": 1,
+ "size": 25
+}

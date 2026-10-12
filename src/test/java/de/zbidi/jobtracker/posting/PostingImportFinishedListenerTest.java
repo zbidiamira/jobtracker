@@ -24,7 +24,7 @@ class PostingImportFinishedListenerTest {
 	void completedImportWithNewPostingsIsAnnounced() {
 		listener.afterJob(execution(BatchStatus.COMPLETED, 12));
 
-		verify(events).publishEvent(new PostingsImportedEvent(7L, 12));
+		verify(events).publishEvent(new PostingsImportedEvent("import 7", 12));
 	}
 
 	@Test

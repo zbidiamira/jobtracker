@@ -76,6 +76,24 @@ jobtracker:
   matching:
     # postingMatchJob: at most this many AI analyses per run (each takes 10-30 s with the local model)
     max-per-run: 50
+  jobs:
+    # daily fetch from the job portals; new postings then go to the AI matching. "-" switches it off
+    fetch-cron: ${JOBTRACKER_JOBS_FETCH_CRON:0 0 7 * * *}
+    keywords: Java, Spring          # a posting is kept if it mentions one of them
+    max-per-source: 30              # per portal and run (each posting costs AI time later)
+    arbeitnow:                      # free public API, no key; "please do not abuse": few pages
+      enabled: true
+      base-url: https://www.arbeitnow.com
+      pages: 2
+    bundesagentur:                  # Jobsuche API of the Bundesagentur fuer Arbeit (community-documented)
+      enabled: true
+      base-url: https://rest.arbeitsagentur.de/jobboerse/jobsuche-service
+      api-key: jobboerse-jobsuche   # public client id the API expects, not a secret
+      was: Java Entwickler
+      wo: Berlin
+      umkreis: 50                   # km around "wo"
+      published-within-days: 1
+      request-delay: 200ms          # pause between detail requests
 
 management:
   endpoints:

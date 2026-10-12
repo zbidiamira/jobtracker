@@ -135,6 +135,16 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
   (status: `GET /api/admin/matching/{id}`) and after every import (`PostingImportFinishedListener` →
   `PostingsImportedEvent` → `MatchingService.onPostingsImported`, which only logs if it can't start).
 - `GET /api/matches?minScore=&page=&size=` → the caller's MATCHED results, best first (`MatchQueryService`, JDBC).
+- Job portals (`jobsource/`, `jobtracker.jobs.*`): `JobFetchScheduler` (`fetch-cron`, default 07:00 Berlin, `-` in
+  tests) → `JobFetchService.fetchAll()` → every enabled `JobSource` → new postings saved by url
+  (`FetchedPostingRepository`, values cut to column sizes) → `PostingsImportedEvent("fetch", n)` → matching.
+  A failing portal is reported per source and doesn't stop the others. `POST /api/admin/jobs/fetch` runs it now.
+  - `ArbeitnowJobSource`: `GET /api/job-board-api?page=n` (no key, full text included, no search → keyword filter
+    locally), stops at `max-per-source` or the last page.
+  - `BundesagenturJobSource`: `GET /pc/v6/jobs?was&wo&umkreis&veroeffentlichtseit` with `X-API-Key: jobboerse-jobsuche`
+    (list = `ergebnisliste`), then `GET /pc/v4/jobdetails/{base64(referenznummer)}` per hit for
+    `stellenangebotsBeschreibung` (v2/v3 answer 403); public page `arbeitsagentur.de/jobsuche/jobdetail/{refnr}`.
+  - Tests use hand-written answers in `src/test/resources/jobsource/` via `MockRestServiceServer`; never the real APIs.
 
 ### Testing
 - Testcontainers for integration tests: `TestcontainersConfiguration` = shared static PostgreSQL + Kafka

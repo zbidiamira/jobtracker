@@ -24,7 +24,7 @@ public class PostingImportFinishedListener implements JobExecutionListener {
 	public void afterJob(JobExecution execution) {
 		long written = execution.getStepExecutions().stream().mapToLong(StepExecution::getWriteCount).sum();
 		if (execution.getStatus() == BatchStatus.COMPLETED && written > 0) {
-			events.publishEvent(new PostingsImportedEvent(execution.getId(), written));
+			events.publishEvent(new PostingsImportedEvent("import " + execution.getId(), written));
 		}
 	}
 

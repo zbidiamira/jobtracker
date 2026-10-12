@@ -76,15 +76,15 @@ public class MatchingService {
 		return ImportStatusResponse.from(execution);
 	}
 
-	/** New postings are analyzed right away. The import itself already succeeded: a refusal here is only logged. */
+	/** New postings are analyzed right away. The import/fetch already succeeded: a refusal here is only logged. */
 	@EventListener
 	public void onPostingsImported(PostingsImportedEvent event) {
 		try {
 			JobExecution execution = start();
-			log.info("{} new posting(s) imported: matching run {} started", event.written(), execution.getId());
+			log.info("{} new posting(s) ({}): matching run {} started", event.written(), event.origin(), execution.getId());
 		}
 		catch (AiUnavailableException | MatchingAlreadyRunningException ex) {
-			log.info("Matching not started after import {}: {}", event.jobExecutionId(), ex.getMessage());
+			log.info("Matching not started after {}: {}", event.origin(), ex.getMessage());
 		}
 	}
 

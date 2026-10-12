@@ -1,0 +1,27 @@
+{
+ "data": [
+  {
+   "slug": "spring-munich-4",
+   "company_name": "Umbrella",
+   "title": "Senior Spring Engineer",
+   "description": "<p>Java 21 and Spring.</p>",
+   "remote": false,
+   "url": "https://www.arbeitnow.com/jobs/companies/x/spring-munich-4",
+   "tags": [
+    "Engineering"
+   ],
+   "job_types": [
+    "full time"
+   ],
+   "location": "Munich",
+   "created_at": 1791200000
+  }
+ ],
+ "links": {
+  "next": null
+ },
+ "meta": {
+  "current_page": 2,
+  "per_page": 3
+ }
+}
