@@ -66,7 +66,8 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
   (`@TransactionalEventListener(AFTER_COMMIT)`) to topic `application-status`, key = application id →
   `StatusHistoryListener` writes `status_history`, idempotent via unique `event_id` (V7).
 - History is **eventually consistent** (tests wait with Awaitility). Failures: 3 retries with backoff, then
-  `application-status.DLT` (set explicitly in `KafkaConfig`; Spring Kafka 4's default name would be `...-dlt`).
+  `<topic>.DLT`, e.g. `application-status.DLT` (`KafkaConfig.deadLetterDestination`; Spring Kafka 4's default would be
+  `...-dlt`).
 - JSON via **`JacksonJsonSerializer`/`JacksonJsonDeserializer`** (Jackson 3, matches Boot 4), no type headers; the
   consumer wraps it in `ErrorHandlingDeserializer`. Don't use the Jackson-2-based `JsonSerializer`.
 - Known gap: an event is lost if the app dies between commit and send (no transactional outbox yet).
@@ -145,6 +146,11 @@ V3/V4 `status_history` · V5 `app_user` (BCrypt `password_hash`, role USER/ADMIN
     (list = `ergebnisliste`), then `GET /pc/v4/jobdetails/{base64(referenznummer)}` per hit for
     `stellenangebotsBeschreibung` (v2/v3 answer 403); public page `arbeitsagentur.de/jobsuche/jobdetail/{refnr}`.
   - Tests use hand-written answers in `src/test/resources/jobsource/` via `MockRestServiceServer`; never the real APIs.
+- Good matches: `PostingMatchWriter` publishes `GoodMatchFound` for a newly stored score ≥
+  `jobtracker.matching.notify-score` (75) → `MatchEvents` (AFTER_COMMIT) → Kafka `posting-matches`, key = user id
+  (DLT `posting-matches.DLT`) → `AutoApplicationListener` (group `${spring.kafka.consumer.group-id}-auto-applications`,
+  own JSON default type via `@KafkaListener(properties)`) creates a SAVED application (company reused by name or
+  created); duplicates are ignored, so redeliveries are harmless. Off with `jobtracker.matching.auto-create-application`.
 
 ### Testing
 - Testcontainers for integration tests: `TestcontainersConfiguration` = shared static PostgreSQL + Kafka

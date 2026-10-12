@@ -76,6 +76,8 @@ jobtracker:
   matching:
     # postingMatchJob: at most this many AI analyses per run (each takes 10-30 s with the local model)
     max-per-run: 50
+    notify-score: 75                # a result at or above this score is announced (Kafka posting-matches) ...
+    auto-create-application: true   # ... and becomes a SAVED application for that user
   jobs:
     # daily fetch from the job portals; new postings then go to the AI matching. "-" switches it off
     fetch-cron: ${JOBTRACKER_JOBS_FETCH_CRON:0 0 7 * * *}

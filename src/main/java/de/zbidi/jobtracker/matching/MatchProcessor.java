@@ -29,7 +29,8 @@ public class MatchProcessor implements ItemProcessor<MatchCandidate, PostingMatc
 	@Override
 	public PostingMatch process(MatchCandidate candidate) {
 		PostingAnalysis analysis = analyzer.analyze(candidate.userId(), candidate.toPostingText());
-		return new PostingMatch(candidate.postingId(), candidate.userId(), analysis, clock.instant());
+		return new PostingMatch(candidate.postingId(), candidate.userId(), candidate.title(), candidate.companyName(),
+				candidate.url(), analysis, clock.instant());
 	}
 
 }
